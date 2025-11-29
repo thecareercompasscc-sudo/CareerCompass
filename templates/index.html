@@ -29,6 +29,11 @@
       line-height: 1.5;
     }
 
+    /* When modal is open, lock scroll */
+    body.cc-locked {
+      overflow: hidden;
+    }
+
     .page {
       min-height: 100vh;
       display: flex;
@@ -275,10 +280,104 @@
       from { transform: rotate(0deg); }
       to   { transform: rotate(360deg); }
     }
+
+    /* Privacy / data use modal overlay */
+    .cc-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 9998;
+    }
+
+    .cc-modal-overlay.cc-visible {
+      display: flex;
+    }
+
+    .cc-modal {
+      background: #ffffff;
+      max-width: 480px;
+      width: 90%;
+      border-radius: 10px;
+      padding: 24px 20px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .cc-modal h2 {
+      font-size: 1.3rem;
+      margin-bottom: 10px;
+    }
+
+    .cc-modal p {
+      font-size: 0.9rem;
+      line-height: 1.5;
+      margin-bottom: 12px;
+    }
+
+    .cc-modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .cc-btn {
+      border: none;
+      border-radius: 999px;
+      padding: 8px 16px;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+
+    .cc-btn-primary {
+      background: #111827;
+      color: #ffffff;
+    }
+
+    .cc-btn-secondary {
+      background: #e5e7eb;
+      color: #111827;
+    }
+
+    .cc-btn-primary:hover {
+      opacity: 0.9;
+    }
+
+    .cc-btn-secondary:hover {
+      background: #d1d5db;
+    }
   </style>
 </head>
 
 <body>
+  <!-- Privacy / Data Use Modal -->
+  <div id="cc-privacy-overlay" class="cc-modal-overlay">
+    <div class="cc-modal">
+      <h2>Before You Continue</h2>
+      <p>
+        CareerCompass analyses the information you provide to generate your personalised career report.
+        By continuing, you agree that your CV, email address, and any other submitted information may
+        be used for generating your report, improving the product, and future communications related
+        to CareerCompass.
+      </p>
+      <p style="font-size: 0.85rem; color: #4b5563;">
+        If you do not agree, please exit the site and do not submit your information.
+      </p>
+
+      <div class="cc-modal-actions">
+        <button type="button" id="cc-privacy-exit" class="cc-btn cc-btn-secondary">
+          Exit
+        </button>
+        <button type="button" id="cc-privacy-accept" class="cc-btn cc-btn-primary">
+          Agree &amp; Continue
+        </button>
+      </div>
+    </div>
+  </div>
+
   <div class="page">
     <div class="card">
       <form method="POST" action="/generate" enctype="multipart/form-data">
@@ -345,7 +444,7 @@
     <span>This usually takes up to 45 seconds.</span>
   </div>
 
-  <!-- LIVE VALIDATION + BUTTON ENABLE/DISABLE + LOADING -->
+  <!-- LIVE VALIDATION + PRIVACY GATE + LOADING -->
   <script>
     const button = document.querySelector(".btn-primary");
     const emailInput = document.getElementById("email");
@@ -353,6 +452,26 @@
     const cvFile = document.getElementById("cv_file");
     const form = document.querySelector("form");
     const loadingOverlay = document.getElementById("loading-overlay");
+
+    // Privacy modal elements
+    const STORAGE_KEY = "cc_privacy_accepted_v1";
+    const overlay = document.getElementById("cc-privacy-overlay");
+    const acceptBtn = document.getElementById("cc-privacy-accept");
+    const exitBtn = document.getElementById("cc-privacy-exit");
+
+    let privacyAccepted = false;
+
+    function openPrivacyModal() {
+      if (!overlay) return;
+      overlay.classList.add("cc-visible");
+      document.body.classList.add("cc-locked");
+    }
+
+    function closePrivacyModal() {
+      if (!overlay) return;
+      overlay.classList.remove("cc-visible");
+      document.body.classList.remove("cc-locked");
+    }
 
     function validateForm() {
       const emailValid = /^\S+@\S+\.\S+$/.test(emailInput.value.trim());
@@ -373,8 +492,8 @@
         cvFile.classList.remove("input-error");
       }
 
-      // Enable/disable button
-      if (emailValid && cvValid) {
+      // Enable/disable button (also require privacyAccepted)
+      if (emailValid && cvValid && privacyAccepted) {
         button.disabled = false;
         button.classList.remove("disabled");
       } else {
@@ -383,10 +502,39 @@
       }
     }
 
+    // Field listeners
     emailInput.addEventListener("input", validateForm);
     cvText.addEventListener("input", validateForm);
     cvFile.addEventListener("change", validateForm);
-    validateForm();
+
+    // Initial setup once DOM is ready
+    document.addEventListener("DOMContentLoaded", function () {
+      privacyAccepted = localStorage.getItem(STORAGE_KEY) === "true";
+
+      if (!privacyAccepted) {
+        openPrivacyModal();
+      }
+
+      // Ensure correct initial state
+      validateForm();
+    });
+
+    // Handle "Agree & Continue"
+    if (acceptBtn) {
+      acceptBtn.addEventListener("click", function () {
+        privacyAccepted = true;
+        localStorage.setItem(STORAGE_KEY, "true");
+        closePrivacyModal();
+        validateForm(); // re-check now that privacy is accepted
+      });
+    }
+
+    // Handle "Exit" (send them away)
+    if (exitBtn) {
+      exitBtn.addEventListener("click", function () {
+        window.location.href = "https://google.com";
+      });
+    }
 
     // Show loading overlay on submit (only when button is actually enabled)
     form.addEventListener("submit", () => {
