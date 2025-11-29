@@ -20,23 +20,20 @@ from flask_mail import Mail, Message
 from openai import OpenAI
 from docx import Document
 from PyPDF2 import PdfReader
-from fpdf import FPDF  # PDF generation (simple text-based)
+from fpdf import FPDF  # simple text-based PDF
 
-# ---------- Flask & Mail setup ----------
-
-from pathlib import Path
+# ---------- Paths & Flask setup ----------
 
 BASE_DIR = Path(__file__).resolve().parent
 app = Flask(__name__, template_folder=str(BASE_DIR / "templates"))
-
 app.secret_key = "change-me-in-production"
 
 mail = Mail()
 
 # Folders for uploads and generated PDFs
-UPLOAD_FOLDER = Path("uploads")
-REPORTS_FOLDER = Path("reports")
-EMAIL_LIST_FILE = Path("email_list.csv")  # simple CSV mailing list
+UPLOAD_FOLDER = BASE_DIR / "uploads"
+REPORTS_FOLDER = BASE_DIR / "reports"
+EMAIL_LIST_FILE = BASE_DIR / "email_list.csv"  # simple CSV mailing list
 
 UPLOAD_FOLDER.mkdir(exist_ok=True)
 REPORTS_FOLDER.mkdir(exist_ok=True)
@@ -44,12 +41,13 @@ REPORTS_FOLDER.mkdir(exist_ok=True)
 app.config["UPLOAD_FOLDER"] = str(UPLOAD_FOLDER)
 app.config["REPORTS_FOLDER"] = str(REPORTS_FOLDER)
 
-# Email (Flask-Mail) config
+# ---------- Email (Flask-Mail) config ----------
+
 app.config["MAIL_SERVER"] = "smtp.gmail.com"
 app.config["MAIL_PORT"] = 587
 app.config["MAIL_USE_TLS"] = True
 
-# Use env vars if present (Railway), otherwise fall back to your dev defaults
+# Railway: you set these as environment variables
 app.config["MAIL_USERNAME"] = os.environ.get(
     "MAIL_USERNAME", "the.career.compass.cc@gmail.com"
 )
@@ -65,10 +63,9 @@ mail.init_app(app)
 
 # ---------- OpenAI client ----------
 
-# Uses OPENAI_API_KEY from your environment
-client = OpenAI()
+client = OpenAI()  # uses OPENAI_API_KEY from env
 
-# ---------- Prompt: CareerCompass System Prompt (aligned with your idea card) ----------
+# ---------- CareerCompass System Prompt (aligned with your idea card) ----------
 
 SYSTEM_PROMPT = """
 You are CareerCompass, an AI career analyst.
@@ -156,96 +153,6 @@ SECTION C — Job Search Resources
 8. Professional Summary (CV & LinkedIn Ready)
 9. Cover Letter Opening Paragraph
 10. Job Search Tips
-
-Section Content Summary (aligned to the idea):
-
-1. Candidate Snapshot
-- 2–4 sentence overview of the candidate.
-- Add a short bullet list with key facts (location if known/implied, seniority level, core fields, any standout context such as non-elite university, first-generation student, or career change).
-- If information is missing (e.g. location), briefly state that and keep recommendations general.
-- Where appropriate, briefly normalise not having a grad scheme or “perfect CV”.
-
-2. Suitable Roles
-- 3–7 realistic entry / next-step roles with 1–2 lines explaining why each fits this specific CV.
-- At least half of these roles should be:
-  - outside traditional grad schemes,
-  - in overlooked industries or functions,
-  - or “bridge roles” that help them move towards a more competitive role later.
-- Label at least one or two options explicitly as:
-  - “Non-obvious but realistic route” or
-  - “Stepping-stone role” and explain why.
-- Include an “insider note” on what hiring managers actually use to shortlist for these roles, especially when candidates aren’t from elite universities.
-
-3. Strengths
-- 3–6 strengths linked to modules, skills, projects, jobs, volunteering, clubs, or responsibilities mentioned or reasonably implied by the CV.
-- Focus especially on strengths that are under-valued by traditional grad schemes but valued by SMEs, agencies, startups, and local employers (e.g. getting things done, handling chaos, dealing with customers).
-- For each strength, briefly mention how it can be framed in interviews or networking conversations in a way that feels grounded and confident.
-
-4. Skill Gaps & What to Learn
-- 3–6 realistic gaps with concrete learning suggestions for the next 3–6 months.
-- Where helpful, reference typical learning paths (e.g. “intro SQL course”, “basic financial modelling”, “Google Analytics basics”) rather than specific course providers.
-- Include at least one suggestion that:
-  - creates a small project or portfolio piece they can show,
-  - or gets them closer to real-world exposure (e.g. volunteering, freelance micro-projects, helping a local business).
-- Include at least one networking-focused suggestion (e.g. “speak to 2–3 people who use X tool and ask them how they learned it”).
-
-5. Salary Expectations
-- Give realistic salary ranges for the candidate’s current level, prioritising roles outside formal grad schemes where relevant.
-- For the **first role**, stay grounded in typical entry-level pay for their background and region (or clearly labelled examples if unknown).
-- Mention that ranges are based on aggregated salary data (e.g. Glassdoor, ONS, BLS, Salary.com) rather than precise statistics.
-
-- INCLUDE an extra subsection on potential career progression:
-  - List 2–4 likely progression roles within ~3–7 years (e.g. Operations Lead, Account Manager, Product Analyst, Marketing Executive → Marketing Manager).
-  - Include at least one progression path that starts from a “non-glamorous” first job but leads to a strong mid-level role.
-  - For **progression roles**, lean slightly towards the upper half of typical market ranges (while still believable), to signal upside if they perform well.
-  - Where helpful, briefly contrast:
-    - “conservative / typical range” vs
-    - “ambitious but realistic range if things go well”.
-  - Make clear that all figures are indicative and depend on performance, qualifications, location, and market conditions.
-
-- Add 2–3 short “insider tips” on compensation:
-  - How early-career candidates typically progress in pay outside of grad schemes.
-  - Common negotiation mistakes to avoid (especially for first jobs).
-  - How to think about “total opportunity” (manager quality, learning, exposure, brand, internal mobility) rather than just starting salary.
-
-6. Companies Hiring / Employer Types
-- 3–6 bullets describing categories of employers that are realistic for this candidate, such as:
-  - Small and mid-sized businesses,
-  - Agencies (marketing, creative, recruitment, consulting),
-  - Local/regional firms,
-  - Startups and scale-ups,
-  - Public sector / non-profits where relevant,
-  - AND, if appropriate, a note on where grad schemes could still be an option.
-- Where useful, include examples of typical team names or functions (e.g. “operations support”, “customer success”, “rev ops”, “sales support”, “FP&A”, “insights”) so the candidate knows what to search for.
-- Add 1–2 bullets on what to look for in a “good” early-career employer in this space (mentoring, clear responsibilities, exposure, stable hours, fair treatment) vs red flags (no training, constant churn, unclear role).
-
-7. 90-Day Action Plan
-- Break into three phases: Days 1–30 (Foundation), 31–60 (Execution), 61–90 (Optimisation).
-- 3–5 bullets per phase with concrete actions that increase interview and offer chances, especially outside grad schemes.
-- Include at least one networking or “talk to people in the field” action per phase (e.g. informational interviews, alumni outreach, attending meetups, sending 10 short LinkedIn messages).
-- Suggest actions that build visible evidence of skill: small projects, part-time roles, volunteering, or side hustles that can be added to a CV.
-- Where relevant, suggest specific types of people to talk to (e.g. “1–2 people in operations at smaller companies”, “someone who hires for customer-facing roles”, “a recruiter who places juniors in your field”).
-
-8. Professional Summary (CV & LinkedIn Ready)
-- 3–4 sentence summary suitable for the top of a CV or LinkedIn “About”.
-- Clearly state who they are, what they bring, and what they’re aiming for.
-- Make it sound like something a recruiter or hiring manager would find clear and credible, not buzzword-heavy.
-- Where appropriate, acknowledge their stage (e.g. final-year student, fresh graduate, early career switcher) and highlight that they are open to practical, non-grad-scheme routes.
-
-9. Cover Letter Opening Paragraph
-- 4–5 sentences the candidate can adapt into job applications.
-- Introduce who they are, their background, and why they fit early-career roles in their field.
-- Include 1–2 subtle “insider” elements, such as referencing understanding of the team’s typical focus (e.g. “supporting month-end reporting”, “keeping operations running smoothly”, “supporting frontline staff”) where appropriate.
-- Where suitable, position them as someone who is serious, realistic, and ready to contribute quickly rather than just chasing prestige.
-
-10. Job Search Tips
-- 5–7 practical suggestions tailored to their field and level.
-- Include examples of useful channels (job boards, grad schemes if relevant, local firms, agencies, LinkedIn tactics, networking, alumni, Discord/Slack communities), not specific live postings.
-- At least half of the tips should be things a candidate would normally only hear from people in the industry, such as:
-  - How to write outreach messages that actually get replies.
-  - What to put in a portfolio / project section that impresses hiring managers.
-  - Specific phrases or stories that work well in interviews for these types of roles.
-  - How to position “non-prestigious” experience (retail, hospitality, student work) as a strength.
 """
 
 # ---------- Helper: build user prompt ----------
@@ -271,7 +178,7 @@ Here is the candidate’s CV:
 {cv_text}
 """
 
-# ---------- Helper: PDF generation (simple HTML → text PDF) ----------
+# ---------- PDF generation (simple HTML → text) ----------
 
 class SimplePDF(FPDF):
     """Very simple PDF generator for text-based reports."""
@@ -284,7 +191,6 @@ def create_pdf_from_html(html_content: str, pdf_path: Path) -> None:
     pdf.add_page()
     pdf.set_font("Arial", size=11)
 
-    # Basic HTML → text cleanup
     text = html_content
 
     # Turn </li> into newlines, <li> into bullets
@@ -355,14 +261,11 @@ def extract_text_from_upload(file_storage) -> str:
 # ---------- Helper: call OpenAI and get report HTML ----------
 
 def generate_report_html(cv_text: str) -> str:
-    """
-    Takes raw CV text and returns the HTML report from OpenAI.
-    """
     if not cv_text or not cv_text.strip():
         return "<div class='section'><h2>Error</h2><p>No CV text provided.</p></div>"
 
     response = client.chat.completions.create(
-        model="gpt-4.1-mini",  # you can switch to gpt-4.1 for higher quality
+        model="gpt-4.1-mini",
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": build_user_prompt(cv_text)},
@@ -376,9 +279,6 @@ def generate_report_html(cv_text: str) -> str:
 # ---------- Helper: store email in CSV mailing list ----------
 
 def save_email_to_list(email: str) -> None:
-    """
-    Append the email to a CSV file so you passively build a mailing list.
-    """
     email = (email or "").strip().lower()
     if not email:
         return
@@ -396,13 +296,22 @@ def save_email_to_list(email: str) -> None:
 def sync_email_to_sheet(email: str) -> None:
     """
     Sends ONE email record to your Google Sheet with no duplicates.
-    Uses the service account in cc_service.json.
+    Uses the service account in cc_service.json if present.
     """
-    import gspread
-    from oauth2client.service_account import ServiceAccountCredentials
-
     email = (email or "").strip().lower()
     if not email:
+        return
+
+    try:
+        import gspread
+        from oauth2client.service_account import ServiceAccountCredentials
+    except ImportError:
+        app.logger.warning("gspread/oauth2client not installed; skipping sheet sync.")
+        return
+
+    key_path = BASE_DIR / "cc_service.json"
+    if not key_path.exists():
+        app.logger.info("cc_service.json not found; skipping Google Sheet sync.")
         return
 
     scope = [
@@ -410,12 +319,12 @@ def sync_email_to_sheet(email: str) -> None:
         "https://www.googleapis.com/auth/drive",
     ]
     creds = ServiceAccountCredentials.from_json_keyfile_name(
-        "cc_service.json", scope
+        str(key_path), scope
     )
-    client = gspread.authorize(creds)
+    client_gs = gspread.authorize(creds)
 
-    SHEET_NAME = "CareerCompass Emails"  # must match your sheet name
-    sheet = client.open(SHEET_NAME).sheet1
+    SHEET_NAME = "CareerCompass Emails"
+    sheet = client_gs.open(SHEET_NAME).sheet1
 
     existing = set()
     records = sheet.get_all_records()
@@ -431,9 +340,6 @@ def sync_email_to_sheet(email: str) -> None:
 # ---------- Helper: send report PDF to user ----------
 
 def send_report_email(recipient_email: str, pdf_path: Path) -> None:
-    """
-    Send the generated PDF to the user via email.
-    """
     recipient_email = (recipient_email or "").strip()
     if not recipient_email:
         return
@@ -475,9 +381,7 @@ def generate_report():
     file = request.files.get("cv_file")
 
     file_text = extract_text_from_upload(file)
-    combined_cv = "\n\n".join(
-        part for part in [text_box, file_text] if part
-    ).strip()
+    combined_cv = "\n\n".join(part for part in [text_box, file_text] if part).strip()
 
     if not combined_cv:
         flash("Please paste your CV or upload a valid file.", "error")
@@ -486,7 +390,7 @@ def generate_report():
     # 1) Get HTML report
     report_html = generate_report_html(combined_cv)
 
-    # 2) HTML for PDF
+    # 2) Build HTML used for PDF (same content you show on-screen)
     full_html_for_pdf = render_template(
         "report_pdf.html",
         email=email,
@@ -497,7 +401,7 @@ def generate_report():
     report_id = str(uuid.uuid4())
     pdf_path = REPORTS_FOLDER / f"{report_id}.pdf"
 
-    # 4) Generate PDF (fpdf2)
+    # 4) Generate PDF
     try:
         create_pdf_from_html(full_html_for_pdf, pdf_path)
     except Exception as e:
@@ -545,6 +449,5 @@ def download_report(report_id):
     )
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))  # Railway overrides this
+    port = int(os.environ.get("PORT", 8000))  # Railway will set this
     app.run(host="0.0.0.0", port=port)
-
