@@ -22,10 +22,12 @@ from docx import Document
 from PyPDF2 import PdfReader
 from fpdf import FPDF  # simple text-based PDF
 
+
 # ---------- Paths & Flask setup ----------
 
 BASE_DIR = Path(__file__).resolve().parent
-app = Flask(__name__, template_folder=str(BASE_DIR / "templates"))
+
+app = Flask(__name__)  # will look for BASE_DIR / "templates" by default
 app.secret_key = "change-me-in-production"
 
 mail = Mail()
@@ -47,7 +49,7 @@ app.config["MAIL_SERVER"] = "smtp.gmail.com"
 app.config["MAIL_PORT"] = 587
 app.config["MAIL_USE_TLS"] = True
 
-# Railway: you set these as environment variables
+# Use env vars in production, fall back to local dev defaults
 app.config["MAIL_USERNAME"] = os.environ.get(
     "MAIL_USERNAME", "the.career.compass.cc@gmail.com"
 )
@@ -61,11 +63,14 @@ app.config["MAIL_DEFAULT_SENDER"] = (
 
 mail.init_app(app)
 
+
 # ---------- OpenAI client ----------
 
-client = OpenAI()  # uses OPENAI_API_KEY from env
+# Uses OPENAI_API_KEY from your environment
+client = OpenAI()
 
-# ---------- CareerCompass System Prompt (aligned with your idea card) ----------
+
+# ---------- System Prompt (aligned with your idea card) ----------
 
 SYSTEM_PROMPT = """
 You are CareerCompass, an AI career analyst.
@@ -155,6 +160,7 @@ SECTION C — Job Search Resources
 10. Job Search Tips
 """
 
+
 # ---------- Helper: build user prompt ----------
 
 def build_user_prompt(cv_text: str) -> str:
@@ -178,7 +184,8 @@ Here is the candidate’s CV:
 {cv_text}
 """
 
-# ---------- PDF generation (simple HTML → text) ----------
+
+# ---------- Helper: simple PDF generation ----------
 
 class SimplePDF(FPDF):
     """Very simple PDF generator for text-based reports."""
@@ -191,6 +198,7 @@ def create_pdf_from_html(html_content: str, pdf_path: Path) -> None:
     pdf.add_page()
     pdf.set_font("Arial", size=11)
 
+    # Basic HTML → text cleanup
     text = html_content
 
     # Turn </li> into newlines, <li> into bullets
@@ -212,6 +220,7 @@ def create_pdf_from_html(html_content: str, pdf_path: Path) -> None:
             pdf.multi_cell(0, 6, line)
 
     pdf.output(str(pdf_path))
+
 
 # ---------- Helper: extract text from uploaded file ----------
 
@@ -258,6 +267,7 @@ def extract_text_from_upload(file_storage) -> str:
 
     return text.strip()
 
+
 # ---------- Helper: call OpenAI and get report HTML ----------
 
 def generate_report_html(cv_text: str) -> str:
@@ -276,6 +286,7 @@ def generate_report_html(cv_text: str) -> str:
 
     return response.choices[0].message.content
 
+
 # ---------- Helper: store email in CSV mailing list ----------
 
 def save_email_to_list(email: str) -> None:
@@ -291,51 +302,52 @@ def save_email_to_list(email: str) -> None:
             writer.writerow(["email", "timestamp_utc"])
         writer.writerow([email, datetime.utcnow().isoformat()])
 
+
 # ---------- Helper: sync a single email to Google Sheets ----------
 
 def sync_email_to_sheet(email: str) -> None:
     """
     Sends ONE email record to your Google Sheet with no duplicates.
-    Uses the service account in cc_service.json if present.
+    Uses the service account in cc_service.json.
+    Fails quietly if the JSON isn't there (e.g. on Railway).
     """
+    try:
+        import gspread
+        from oauth2client.service_account import ServiceAccountCredentials
+    except Exception:
+        # gspread not installed or oauth2client missing – ignore in prod
+        return
+
     email = (email or "").strip().lower()
     if not email:
         return
 
     try:
-        import gspread
-        from oauth2client.service_account import ServiceAccountCredentials
-    except ImportError:
-        app.logger.warning("gspread/oauth2client not installed; skipping sheet sync.")
-        return
+        scope = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        creds = ServiceAccountCredentials.from_json_keyfile_name(
+            "cc_service.json", scope
+        )
+        client = gspread.authorize(creds)
 
-    key_path = BASE_DIR / "cc_service.json"
-    if not key_path.exists():
-        app.logger.info("cc_service.json not found; skipping Google Sheet sync.")
-        return
+        SHEET_NAME = "CareerCompass Emails"
+        sheet = client.open(SHEET_NAME).sheet1
 
-    scope = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-    ]
-    creds = ServiceAccountCredentials.from_json_keyfile_name(
-        str(key_path), scope
-    )
-    client_gs = gspread.authorize(creds)
+        existing = set()
+        records = sheet.get_all_records()
+        for row in records:
+            existing_email = (row.get("email") or "").strip().lower()
+            if existing_email:
+                existing.add(existing_email)
 
-    SHEET_NAME = "CareerCompass Emails"
-    sheet = client_gs.open(SHEET_NAME).sheet1
+        if email not in existing:
+            timestamp = datetime.utcnow().isoformat()
+            sheet.append_row([email, timestamp])
+    except Exception as e:
+        app.logger.error(f"Failed to sync email to Google Sheet: {e}")
 
-    existing = set()
-    records = sheet.get_all_records()
-    for row in records:
-        existing_email = (row.get("email") or "").strip().lower()
-        if existing_email:
-            existing.add(existing_email)
-
-    if email not in existing:
-        timestamp = datetime.utcnow().isoformat()
-        sheet.append_row([email, timestamp])
 
 # ---------- Helper: send report PDF to user ----------
 
@@ -368,11 +380,13 @@ def send_report_email(recipient_email: str, pdf_path: Path) -> None:
 
     mail.send(msg)
 
+
 # ---------- Routes ----------
 
 @app.route("/", methods=["GET"])
 def index():
     return render_template("index.html")
+
 
 @app.route("/generate", methods=["POST"])
 def generate_report():
@@ -381,7 +395,9 @@ def generate_report():
     file = request.files.get("cv_file")
 
     file_text = extract_text_from_upload(file)
-    combined_cv = "\n\n".join(part for part in [text_box, file_text] if part).strip()
+    combined_cv = "\n\n".join(
+        part for part in [text_box, file_text] if part
+    ).strip()
 
     if not combined_cv:
         flash("Please paste your CV or upload a valid file.", "error")
@@ -390,7 +406,7 @@ def generate_report():
     # 1) Get HTML report
     report_html = generate_report_html(combined_cv)
 
-    # 2) Build HTML used for PDF (same content you show on-screen)
+    # 2) Full HTML for preview (browser)
     full_html_for_pdf = render_template(
         "report_pdf.html",
         email=email,
@@ -433,6 +449,7 @@ def generate_report():
         download_url=download_url,
     )
 
+
 @app.route("/download/<report_id>", methods=["GET"])
 def download_report(report_id):
     pdf_filename = f"{report_id}.pdf"
@@ -448,6 +465,7 @@ def download_report(report_id):
         download_name="CareerCompass_Report.pdf",
     )
 
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))  # Railway will set this
+    port = int(os.environ.get("PORT", 8000))  # Railway overrides this
     app.run(host="0.0.0.0", port=port)
