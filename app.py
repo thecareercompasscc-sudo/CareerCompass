@@ -211,7 +211,7 @@ def create_pdf_from_html(html_content: str, pdf_path: Path) -> None:
 
     # Turn </li> into newlines, <li> into bullets
     text = re.sub(r"</li>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"<li>", "• ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<li>", "- ", text, flags=re.IGNORECASE)
 
     # Replace <br> with newlines
     text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
@@ -482,7 +482,7 @@ def generate_report():
     # 1) Get HTML report
     report_html = generate_report_html(combined_cv)
 
-    # 2) HTML for PDF
+    # 2) HTML for PDF + for the email body
     full_html_for_pdf = render_template(
         "report_pdf.html",
         email=email,
@@ -510,7 +510,7 @@ def generate_report():
     except Exception as e:
         app.logger.error(f"Failed to sync email to Google Sheet: {e}")
 
-        try:
+    try:
         # Use the same HTML we fed into the PDF as the email body,
         # so the email looks close to the on-site report.
         send_report_email(email, pdf_path, full_html_for_pdf)
