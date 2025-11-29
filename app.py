@@ -17,8 +17,8 @@ from flask import (
 from flask_mail import Mail, Message
 
 from openai import OpenAI
-from docx import Document
-from PyPDF2 import PdfReader
+from fpdf import FPDF  # NEW
+import re              # NEW (for simple HTML → text cleanup)
 from xhtml2pdf import pisa
 
 # ---------- Flask & Mail setup ----------
