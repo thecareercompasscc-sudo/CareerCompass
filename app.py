@@ -187,6 +187,11 @@ Here is the candidate’s CV:
 """
 
 # ---------- Helper: PDF generation (simple HTML → text PDF) ----------
+# ---------- Helper: PDF generation (simple HTML → text PDF) ----------
+
+class SimplePDF(FPDF):
+    """Very simple PDF generator for text-based reports."""
+    pass
 
 def create_pdf_from_html(html_content: str, pdf_path: Path) -> None:
     """
