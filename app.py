@@ -24,7 +24,11 @@ from fpdf import FPDF  # PDF generation (simple text-based)
 
 # ---------- Flask & Mail setup ----------
 
-app = Flask(__name__)
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+app = Flask(__name__, template_folder=str(BASE_DIR / "templates"))
+
 app.secret_key = "change-me-in-production"
 
 mail = Mail()
