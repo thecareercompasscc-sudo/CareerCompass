@@ -1,3 +1,9 @@
+Flask
+Flask-Mail
+openai
+python-docx
+PyPDF2
+xhtml2pdf
+gspread
+oauth2client
 gunicorn
-
-
