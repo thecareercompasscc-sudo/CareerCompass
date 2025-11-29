@@ -1,8 +1,8 @@
 [build]
-builder = "Nixpacks"
+builder = "NIXPACKS"
 
 [deploy]
-start = "python app.py"
+startCommand = "python app.py"
 
 [deploy.environments.production]
 numReplicas = 1
