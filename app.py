@@ -1,6 +1,7 @@
 import os
 import uuid
 import csv
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -17,9 +18,9 @@ from flask import (
 from flask_mail import Mail, Message
 
 from openai import OpenAI
-from fpdf import FPDF  # NEW
-import re              # NEW (for simple HTML → text cleanup)
-from xhtml2pdf import pisa
+from docx import Document
+from PyPDF2 import PdfReader
+from fpdf import FPDF  # PDF generation (simple text-based)
 
 # ---------- Flask & Mail setup ----------
 
@@ -44,12 +45,16 @@ app.config["MAIL_SERVER"] = "smtp.gmail.com"
 app.config["MAIL_PORT"] = 587
 app.config["MAIL_USE_TLS"] = True
 
-# ⚠️ keep these as you have them working now
-app.config["MAIL_USERNAME"] = "the.career.compass.cc@gmail.com"
-app.config["MAIL_PASSWORD"] = "ytlg bkdw rooh ewbd"  # Gmail App Password
+# Use env vars if present (Railway), otherwise fall back to your dev defaults
+app.config["MAIL_USERNAME"] = os.environ.get(
+    "MAIL_USERNAME", "the.career.compass.cc@gmail.com"
+)
+app.config["MAIL_PASSWORD"] = os.environ.get(
+    "MAIL_PASSWORD", "YOUR_GMAIL_APP_PASSWORD_HERE"
+)
 app.config["MAIL_DEFAULT_SENDER"] = (
     "CareerCompass",
-    "the.career.compass.cc@gmail.com",
+    os.environ.get("MAIL_DEFAULT_SENDER", "the.career.compass.cc@gmail.com"),
 )
 
 mail.init_app(app)
@@ -199,7 +204,6 @@ Section Content Summary (aligned to the idea):
   - Common negotiation mistakes to avoid (especially for first jobs).
   - How to think about “total opportunity” (manager quality, learning, exposure, brand, internal mobility) rather than just starting salary.
 
-
 6. Companies Hiring / Employer Types
 - 3–6 bullets describing categories of employers that are realistic for this candidate, such as:
   - Small and mid-sized businesses,
@@ -263,6 +267,42 @@ Here is the candidate’s CV:
 {cv_text}
 """
 
+# ---------- Helper: PDF generation (simple HTML → text PDF) ----------
+
+class SimplePDF(FPDF):
+    """Very simple PDF generator for text-based reports."""
+    pass
+
+
+def create_pdf_from_html(html_content: str, pdf_path: Path) -> None:
+    pdf = SimplePDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    pdf.set_font("Arial", size=11)
+
+    # Basic HTML → text cleanup
+    text = html_content
+
+    # Turn </li> into newlines, <li> into bullets
+    text = re.sub(r"</li>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<li>", "• ", text, flags=re.IGNORECASE)
+
+    # Replace <br> with newlines
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+
+    # Remove all remaining tags
+    text = re.sub(r"<[^>]+>", "", text)
+
+    # Write line by line
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            pdf.ln(4)
+        else:
+            pdf.multi_cell(0, 6, line)
+
+    pdf.output(str(pdf_path))
+
 # ---------- Helper: extract text from uploaded file ----------
 
 def extract_text_from_upload(file_storage) -> str:
@@ -287,11 +327,9 @@ def extract_text_from_upload(file_storage) -> str:
         if ext == ".txt":
             with open(temp_path, "r", encoding="utf-8", errors="ignore") as f:
                 text = f.read()
-
         elif ext == ".docx":
             doc = Document(str(temp_path))
             text = "\n".join(p.text for p in doc.paragraphs)
-
         elif ext == ".pdf":
             with open(temp_path, "rb") as f:
                 reader = PdfReader(f)
@@ -300,11 +338,8 @@ def extract_text_from_upload(file_storage) -> str:
                     page_text = page.extract_text() or ""
                     chunks.append(page_text)
                 text = "\n".join(chunks)
-
         else:
-            # Unsupported type for now
             text = ""
-
     finally:
         try:
             temp_path.unlink()
@@ -378,7 +413,6 @@ def sync_email_to_sheet(email: str) -> None:
     SHEET_NAME = "CareerCompass Emails"  # must match your sheet name
     sheet = client.open(SHEET_NAME).sheet1
 
-    # safely load existing emails
     existing = set()
     records = sheet.get_all_records()
     for row in records:
@@ -459,14 +493,9 @@ def generate_report():
     report_id = str(uuid.uuid4())
     pdf_path = REPORTS_FOLDER / f"{report_id}.pdf"
 
-    # 4) Generate PDF
+    # 4) Generate PDF (fpdf2)
     try:
-        with pdf_path.open("wb") as pdf_file:
-            pisa_status = pisa.CreatePDF(full_html_for_pdf, dest=pdf_file)
-        if pisa_status.err:
-            app.logger.warning(
-                f"xhtml2pdf reported errors generating PDF for {pdf_path}"
-            )
+        create_pdf_from_html(full_html_for_pdf, pdf_path)
     except Exception as e:
         app.logger.error(f"Error generating PDF: {e}")
 
@@ -512,8 +541,6 @@ def download_report(report_id):
     )
 
 if __name__ == "__main__":
-    import os
-    port = int(os.environ.get("PORT", 8000))  # default can be anything
+    port = int(os.environ.get("PORT", 8000))  # Railway overrides this
     app.run(host="0.0.0.0", port=port)
-
 
