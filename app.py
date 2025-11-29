@@ -373,21 +373,41 @@ def extract_text_from_upload(file_storage) -> str:
 def generate_report_html(cv_text: str) -> str:
     """
     Takes raw CV text and returns the HTML report from OpenAI.
+    If the OpenAI call fails or times out, returns a simple error block
+    so the app does NOT hang and get killed by Gunicorn.
     """
     if not cv_text or not cv_text.strip():
         return "<div class='section'><h2>Error</h2><p>No CV text provided.</p></div>"
 
-    response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": build_user_prompt(cv_text)},
-        ],
-        temperature=0.3,
-        max_tokens=4000,
-    )
-
-    return response.choices[0].message.content
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": build_user_prompt(cv_text)},
+            ],
+            temperature=0.3,
+            max_tokens=3500,  # slightly reduced to be safe
+            timeout=30,       # <- IMPORTANT: avoid long hangs / worker timeout
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        app.logger.error(f"OpenAI API error: {e}")
+        # Fallback HTML shown in browser if API fails
+        return """
+        <div class='section'>
+          <h2>Temporary issue generating your report</h2>
+          <p>
+            We ran into a problem while generating your CareerCompass report.
+            This is usually due to a temporary issue talking to the AI model.
+          </p>
+          <p>
+            Please wait a moment and try again. If this keeps happening,
+            you can reply to any CareerCompass email or contact the creator
+            with a screenshot of this page.
+          </p>
+        </div>
+        """
 
 # ---------- Helper: store email in CSV mailing list ----------
 
@@ -519,7 +539,7 @@ def generate_report():
         flash("Please paste your CV or upload a valid file.", "error")
         return redirect(url_for("index"))
 
-    # 1) Get HTML report
+    # 1) Get HTML report (or error HTML if OpenAI fails)
     report_html = generate_report_html(combined_cv)
 
     # 2) Render full HTML used for the PDF (even though we convert to text)
@@ -556,7 +576,6 @@ def generate_report():
         app.logger.error(f"Failed to send report email: {e}")
 
     # 6) Render on-screen HTML report page
-    # (we STILL generate a download URL in case we want the button later)
     download_url = url_for("download_report", report_id=report_id)
 
     return render_template(
