@@ -3,7 +3,8 @@ Flask-Mail
 openai
 python-docx
 PyPDF2
-xhtml2pdf
+xhtml2pdf==0.2.11
 gspread
 oauth2client
 gunicorn
+
