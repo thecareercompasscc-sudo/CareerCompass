@@ -1,9 +1,8 @@
 import os
-import uuid
 import csv
 import re
 import json
-import textwrap
+import socket
 from datetime import datetime
 from pathlib import Path
 
@@ -14,15 +13,15 @@ from flask import (
     redirect,
     url_for,
     flash,
-    send_from_directory,
-    abort,
 )
 from flask_mail import Mail, Message
 
 from openai import OpenAI
 from docx import Document
 from PyPDF2 import PdfReader
-from fpdf import FPDF  # simple text-based PDF
+
+# ---- Global network timeout (for SMTP etc.) ----
+socket.setdefaulttimeout(5)
 
 # ---------- Flask setup ----------
 
@@ -33,16 +32,13 @@ app.secret_key = "change-me-in-production"
 
 mail = Mail()
 
-# Folders for uploads and generated PDFs
+# Folders for uploads and simple email list
 UPLOAD_FOLDER = BASE_DIR / "uploads"
-REPORTS_FOLDER = BASE_DIR / "reports"
-EMAIL_LIST_FILE = BASE_DIR / "email_list.csv"  # simple CSV mailing list
+EMAIL_LIST_FILE = BASE_DIR / "email_list.csv"
 
 UPLOAD_FOLDER.mkdir(exist_ok=True)
-REPORTS_FOLDER.mkdir(exist_ok=True)
 
 app.config["UPLOAD_FOLDER"] = str(UPLOAD_FOLDER)
-app.config["REPORTS_FOLDER"] = str(REPORTS_FOLDER)
 
 # ---------- Email (Flask-Mail) config ----------
 
@@ -67,7 +63,6 @@ mail.init_app(app)
 # ---------- OpenAI client (with timeout) ----------
 
 # Uses OPENAI_API_KEY from your environment.
-# Global timeout so requests never hang forever.
 client = OpenAI(timeout=30)
 
 # ---------- CareerCompass System Prompt ----------
@@ -186,73 +181,6 @@ Here is the candidate’s CV:
 
 {trimmed}
 """
-
-# ---------- Helper: PDF generation (simple HTML → text PDF) ----------
-
-class SimplePDF(FPDF):
-    """Very simple PDF generator for text-based reports."""
-    pass
-
-
-def create_pdf_from_html(html_content: str, pdf_path: Path) -> None:
-    """
-    Very simple HTML → text PDF converter.
-
-    - Strips basic HTML tags
-    - Normalises “smart” quotes, en/em dashes, bullets etc.
-    - Wraps long lines so FPDF never complains about horizontal space
-    """
-    pdf = SimplePDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-    pdf.set_font("Arial", size=11)
-
-    text = html_content
-
-    # Turn </li> into newlines, <li> into bullets
-    text = re.sub(r"</li>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"<li>", "- ", text, flags=re.IGNORECASE)
-
-    # Replace <br> with newlines
-    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
-
-    # Remove all remaining tags
-    text = re.sub(r"<[^>]+>", "", text)
-
-    # Normalise common “fancy” characters to ASCII
-    replacements = {
-        "–": "-",
-        "—": "-",
-        "“": '"',
-        "”": '"',
-        "‘": "'",
-        "’": "'",
-        "•": "-",
-        "…": "...",
-        "\u00a0": " ",  # non-breaking space → normal space
-    }
-    for bad, good in replacements.items():
-        text = text.replace(bad, good)
-
-    # Drop anything still not latin-1 (fpdf core fonts limit)
-    text = text.encode("latin-1", "ignore").decode("latin-1")
-
-    # Write line by line, wrapping long lines to avoid the “not enough space” error
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            pdf.ln(4)
-        else:
-            # wrap long lines into chunks
-            wrapped = textwrap.wrap(line, width=100)
-            if not wrapped:
-                pdf.ln(4)
-            else:
-                for chunk in wrapped:
-                    pdf.multi_cell(0, 6, chunk)
-
-    pdf.output(str(pdf_path))
-
 
 # ---------- Helper: extract text from uploaded file ----------
 
@@ -404,52 +332,117 @@ def sync_email_to_sheet(email: str) -> None:
         sheet.append_row([email, timestamp])
         app.logger.info(f"Added {email} to Google Sheet.")
 
-# ---------- Helper: send report PDF to user ----------
+# ---------- Helper: send report email (HTML + AI prompt pack) ----------
 
-def send_report_email(recipient_email: str, pdf_path: Path, email_html: str) -> None:
+def send_report_email(recipient_email: str, html_report: str) -> None:
     """
     Send the generated report to the user via email.
 
-    - Always sends an email (even if the PDF file is missing).
-    - Attaches the PDF if it exists.
-    - Uses the HTML report as the email body so it looks close to the site.
+    - No PDFs or attachments.
+    - Includes an AI Prompt Pack (static) at the top.
+    - Appends the full HTML report underneath.
     """
     recipient_email = (recipient_email or "").strip()
     if not recipient_email:
         app.logger.info("No recipient email provided – skipping email send.")
         return
 
-    subject = "Your CareerCompass Report"
+    subject = "Your CareerCompass report + AI prompts to go deeper"
 
     # Plain-text fallback body (for clients that don't render HTML)
     body_text = (
         "Hi,\n\n"
         "Thanks for using CareerCompass.\n\n"
-        "Your personalised career report is included below. "
-        "If a PDF attachment is present, you can also download it for your records.\n\n"
-        "If you have any feedback or want help interpreting it, just reply to this email.\n\n"
+        "Your personalised career report is included below as HTML.\n"
+        "We’ve also added a set of AI prompts you can copy and paste into ChatGPT\n"
+        "or any AI tool to get more personalised help from your report.\n\n"
         "Best,\n"
-        "The CareerCompass Team"
+        "CareerCompass"
     )
 
-    msg = Message(subject=subject, recipients=[recipient_email])
-    msg.body = body_text
-    msg.html = email_html  # use the rendered HTML report
+    # Static AI Prompt Pack HTML (independent of the report content)
+    ai_prompts_html = """
+    <div style="font-family: Arial, sans-serif; max-width: 720px; margin: 0 auto;">
+      <h1 style="font-size: 22px; margin-bottom: 8px;">Your CareerCompass report</h1>
+      <p style="font-size: 14px; line-height: 1.5;">
+        Below is your full CareerCompass report. To get even more value from it,
+        you can copy your report into an AI tool (like ChatGPT) and use the
+        prompts in this email to go deeper.
+      </p>
 
-    # Attach PDF only if it actually exists
-    if pdf_path and pdf_path.exists():
-        try:
-            with pdf_path.open("rb") as f:
-                pdf_data = f.read()
-            filename = pdf_path.name
-            msg.attach(filename, "application/pdf", pdf_data)
-            app.logger.info(f"Attached PDF {filename} for {recipient_email}.")
-        except Exception as e:
-            app.logger.error(f"Failed to attach PDF for {recipient_email}: {e}")
-    else:
-        app.logger.warning(
-            f"PDF path does not exist or is None for {recipient_email}: {pdf_path}"
-        )
+      <h2 style="font-size: 18px; margin-top: 24px;">✨ Bonus: AI Prompt Pack</h2>
+      <p style="font-size: 14px; line-height: 1.5%;">
+        Copy your report, open your favourite AI tool, and paste <strong>your report</strong>
+        followed by one of the prompts below.
+      </p>
+
+      <div style="margin-top: 16px; font-size: 13px; line-height: 1.6;">
+        <h3 style="font-size: 16px; margin-bottom: 4px;">1) Turn my report into a CV rewrite</h3>
+        <pre style="white-space: pre-wrap; font-family: Menlo, Consolas, monospace; background: #f5f5f5; padding: 8px; border-radius: 4px;">
+Here is my personalised career report from CareerCompass. Rewrite my CV using the strengths, skill gaps, and target roles listed. Make it ATS-friendly, action-driven, and aligned to the roles I’m best suited for.
+        </pre>
+
+        <h3 style="font-size: 16px; margin-bottom: 4px;">2) Weekly job search strategy</h3>
+        <pre style="white-space: pre-wrap; font-family: Menlo, Consolas, monospace; background: #f5f5f5; padding: 8px; border-radius: 4px;">
+Here is my personalised career report from CareerCompass. Create a realistic weekly job search schedule with daily tasks, tailored to my background and the target roles mentioned.
+        </pre>
+
+        <h3 style="font-size: 16px; margin-bottom: 4px;">3) Likely interview questions + model answers</h3>
+        <pre style="white-space: pre-wrap; font-family: Menlo, Consolas, monospace; background: #f5f5f5; padding: 8px; border-radius: 4px;">
+Using my CareerCompass report, list 10 likely interview questions for the roles suggested and provide strong, tailored sample answers based on my experience.
+        </pre>
+
+        <h3 style="font-size: 16px; margin-bottom: 4px;">4) Rewrite my LinkedIn profile</h3>
+        <pre style="white-space: pre-wrap; font-family: Menlo, Consolas, monospace; background: #f5f5f5; padding: 8px; border-radius: 4px;">
+Rewrite my LinkedIn headline and About section using the insights from this CareerCompass report. Make it concise, employer-focused, and clearly aligned with the roles you think I should target.
+        </pre>
+
+        <h3 style="font-size: 16px; margin-bottom: 4px;">5) 30-day learning plan for my skill gaps</h3>
+        <pre style="white-space: pre-wrap; font-family: Menlo, Consolas, monospace; background: #f5f5f5; padding: 8px; border-radius: 4px;">
+Here is my CareerCompass report. Based on the skill gaps identified, create a focused 30-day learning plan with weekly milestones and a few suggested resources or practice ideas.
+        </pre>
+
+        <h3 style="font-size: 16px; margin-bottom: 4px;">6) Tailor my CV to a job description</h3>
+        <pre style="white-space: pre-wrap; font-family: Menlo, Consolas, monospace; background: #f5f5f5; padding: 8px; border-radius: 4px;">
+Using the strengths and target roles in this CareerCompass report, help me tailor my CV to the following job description. Rewrite my bullet points and highlight what I should emphasise.
+
+Job description:
+[Paste job description here]
+        </pre>
+
+        <h3 style="font-size: 16px; margin-bottom: 4px;">7) Portfolio or project ideas</h3>
+        <pre style="white-space: pre-wrap; font-family: Menlo, Consolas, monospace; background: #f5f5f5; padding: 8px; border-radius: 4px;">
+Based on this CareerCompass report, suggest 3–5 practical project or portfolio ideas I can complete in 2–6 weeks to make myself more competitive for the roles mentioned.
+        </pre>
+
+        <h3 style="font-size: 16px; margin-bottom: 4px;">8) Networking message ideas</h3>
+        <pre style="white-space: pre-wrap; font-family: Menlo, Consolas, monospace; background: #f5f5f5; padding: 8px; border-radius: 4px;">
+Using the details in this CareerCompass report, write 3 short networking messages I can send to people already working in the roles you recommend for me.
+        </pre>
+
+        <h3 style="font-size: 16px; margin-bottom: 4px;">9) Turn skill gaps into weekly actions</h3>
+        <pre style="white-space: pre-wrap; font-family: Menlo, Consolas, monospace; background: #f5f5f5; padding: 8px; border-radius: 4px;">
+Take the skill gaps listed in this CareerCompass report and break them down into practical weekly actions I can follow over the next 2–3 months.
+        </pre>
+
+        <h3 style="font-size: 16px; margin-bottom: 4px;">10) Define my professional positioning</h3>
+        <pre style="white-space: pre-wrap; font-family: Menlo, Consolas, monospace; background: #f5f5f5; padding: 8px; border-radius: 4px;">
+Using this CareerCompass report, summarise my professional positioning in 3–4 sentences: who I am, what I offer, and the types of problems I can solve for employers.
+        </pre>
+      </div>
+
+      <hr style="margin: 32px 0; border: none; border-top: 1px solid #dddddd;">
+
+      <h2 style="font-size: 18px; margin-bottom: 12px;">Your full CareerCompass report</h2>
+    </div>
+    """
+
+    msg = Message(
+        subject=subject,
+        recipients=[recipient_email],
+    )
+    msg.body = body_text
+    msg.html = ai_prompts_html + html_report
 
     try:
         app.logger.info(f"Attempting to send report email to {recipient_email}...")
@@ -482,24 +475,7 @@ def generate_report():
     # 1) Get HTML report
     report_html = generate_report_html(combined_cv)
 
-    # 2) HTML for PDF + for the email body
-    full_html_for_pdf = render_template(
-        "report_pdf.html",
-        email=email,
-        report_html=report_html,
-    )
-
-    # 3) PDF path
-    report_id = str(uuid.uuid4())
-    pdf_path = REPORTS_FOLDER / f"{report_id}.pdf"
-
-    # 4) Generate PDF
-    try:
-        create_pdf_from_html(full_html_for_pdf, pdf_path)
-    except Exception as e:
-        app.logger.error(f"Error generating PDF: {e}")
-
-    # 5) Save email + sync + send
+    # 2) Save email + sync + send (best effort, never block user seeing report)
     try:
         save_email_to_list(email)
     except Exception as e:
@@ -511,35 +487,16 @@ def generate_report():
         app.logger.error(f"Failed to sync email to Google Sheet: {e}")
 
     try:
-        # Use the same HTML we fed into the PDF as the email body,
-        # so the email looks close to the on-site report.
-        send_report_email(email, pdf_path, full_html_for_pdf)
+        send_report_email(email, report_html)
     except Exception as e:
         app.logger.error(f"Failed to send report email: {e}")
 
-    # 6) Render on-screen HTML report page
-    download_url = url_for("download_report", report_id=report_id)
-
+    # 3) Render on-screen HTML report page (no PDF download now)
     return render_template(
         "report.html",
         email=email,
         report_html=report_html,
-        download_url=download_url,
-    )
-
-@app.route("/download/<report_id>", methods=["GET"])
-def download_report(report_id):
-    pdf_filename = f"{report_id}.pdf"
-    pdf_path = REPORTS_FOLDER / pdf_filename
-
-    if not pdf_path.exists():
-        abort(404)
-
-    return send_from_directory(
-        app.config["REPORTS_FOLDER"],
-        pdf_filename,
-        as_attachment=True,
-        download_name="CareerCompass_Report.pdf",
+        download_url=None,  # if your template checks this, button will just not show
     )
 
 if __name__ == "__main__":
