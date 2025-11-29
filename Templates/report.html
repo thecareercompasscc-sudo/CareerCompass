@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>CareerCompass – Your Career Report</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --chelsea-blue: #034694;
+      --chelsea-blue-dark: #012b7b;
+      --chelsea-blue-soft: #e5effa;
+      --bg-soft: #f3f4f6;
+      --text-main: #111827;
+      --text-muted: #6b7280;
+      --border-subtle: #e5e7eb;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top, rgba(3, 70, 148, 0.05), transparent 55%),
+        var(--bg-soft);
+      color: var(--text-main);
+      line-height: 1.6;
+    }
+
+    .page {
+      max-width: 1050px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: #ffffff;
+      border-radius: 18px;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      box-shadow:
+        0 18px 40px rgba(15, 23, 42, 0.08),
+        0 0 0 1px rgba(255, 255, 255, 0.9);
+      overflow: hidden;
+    }
+
+    .header {
+      padding: 18px 22px;
+      background: linear-gradient(135deg, #0b193b 0%, var(--chelsea-blue) 55%, #2563eb 100%);
+      color: #f9fafb;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 16px;
+      justify-content: space-between;
+    }
+
+    .header-main h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 750;
+      letter-spacing: 0.02em;
+    }
+
+    .header-main p {
+      margin: 4px 0 0;
+      font-size: 13px;
+      color: #e5e7eb;
+    }
+
+    .header-meta {
+      text-align: right;
+      font-size: 11px;
+      color: #d1d5db;
+    }
+
+    .header-meta strong {
+      color: #f9fafb;
+    }
+
+    .header-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .btn-download {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: none;
+      background: #f9fafb;
+      color: var(--chelsea-blue-dark);
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      box-shadow: 0 8px 16px rgba(15, 23, 42, 0.25);
+      cursor: pointer;
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
+      white-space: nowrap;
+    }
+
+    .btn-download:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 22px rgba(15, 23, 42, 0.32);
+    }
+
+    .btn-download span.icon {
+      font-size: 14px;
+    }
+
+    .body {
+      padding: 20px 22px 22px;
+      background: #ffffff;
+    }
+
+    .pill-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+
+    .pill-nav button {
+      border-radius: 999px;
+      border: 1px solid rgba(3, 70, 148, 0.15);
+      padding: 6px 12px;
+      background: #f9fafb;
+      font-size: 11px;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+    }
+
+    .pill-nav button span.dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--chelsea-blue);
+    }
+
+    .pill-nav button:hover {
+      background: var(--chelsea-blue-soft);
+      color: var(--chelsea-blue-dark);
+      border-color: rgba(3, 70, 148, 0.4);
+    }
+
+    .report-content {
+      margin-top: 6px;
+    }
+
+    .report-content .section {
+      margin-bottom: 24px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .report-content .section:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .report-content h2 {
+      font-size: 18px;
+      margin: 0 0 8px;
+      color: var(--chelsea-blue-dark);
+      letter-spacing: 0.01em;
+      border-bottom: 2px solid var(--chelsea-blue-soft);
+      padding-bottom: 4px;
+    }
+
+    .report-content h3 {
+      font-size: 14px;
+      margin: 10px 0 6px;
+      color: #111827;
+    }
+
+    .report-content p {
+      margin: 4px 0 6px;
+      font-size: 13px;
+    }
+
+    .report-content ul {
+      margin: 4px 0 6px 16px;
+      padding: 0;
+      font-size: 13px;
+    }
+
+    .report-content li {
+      margin-bottom: 3px;
+    }
+
+    .footer-note {
+      margin-top: 14px;
+      font-size: 10px;
+      color: var(--text-muted);
+      text-align: right;
+    }
+
+    @media (max-width: 720px) {
+      body {
+        padding: 12px;
+      }
+      .header {
+        align-items: flex-start;
+      }
+      .header-meta {
+        text-align: left;
+      }
+      .header-actions {
+        width: 100%;
+        justify-content: flex-start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="card">
+      <header class="header">
+        <div class="header-main">
+          <h1>Your CareerCompass Report</h1>
+          <p>Personalised career analysis based on your CV.</p>
+        </div>
+
+        <div class="header-actions">
+          <div class="header-meta">
+            {% if email %}
+              <div><strong>Email:</strong> {{ email }}</div>
+            {% endif %}
+            <div>Generated by CareerCompass</div>
+          </div>
+
+          {% if download_url %}
+            <a href="{{ download_url }}" class="btn-download">
+              <span class="icon">⬇️</span>
+              <span>Download PDF</span>
+            </a>
+          {% endif %}
+        </div>
+      </header>
+
+      <main class="body">
+        <!-- Pill navigation -->
+        <nav class="pill-nav">
+          <button type="button" data-target="section-a">
+            <span class="dot"></span>
+            SECTION A – Overview
+          </button>
+          <button type="button" data-target="section-b">
+            <span class="dot"></span>
+            SECTION B – Candidate → Hired
+          </button>
+          <button type="button" data-target="section-c">
+            <span class="dot"></span>
+            SECTION C – Resources
+          </button>
+        </nav>
+
+        <!-- Report content injected from OpenAI -->
+        <div class="report-content" id="report-root">
+          {{ report_html | safe }}
+        </div>
+
+        <div class="footer-note">
+          This report is indicative and based on typical labour-market patterns, not guaranteed outcomes.
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    // Smooth scroll on pill click
+    document.querySelectorAll(".pill-nav button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const targetKey = btn.getAttribute("data-target");
+
+        // Expect the AI to include the big headings like:
+        // "SECTION A — Candidate Overview", etc.
+        const allSections = document.querySelectorAll(".report-content .section");
+        let targetSection = null;
+
+        allSections.forEach((section) => {
+          const heading = section.querySelector("h2, h3");
+          if (!heading) return;
+          const text = heading.textContent || "";
+          if (targetKey === "section-a" && text.toUpperCase().includes("SECTION A")) {
+            targetSection = section;
+          }
+          if (targetKey === "section-b" && text.toUpperCase().includes("SECTION B")) {
+            targetSection = section;
+          }
+          if (targetKey === "section-c" && text.toUpperCase().includes("SECTION C")) {
+            targetSection = section;
+          }
+        });
+
+        if (targetSection) {
+          targetSection.scrollIntoView({ behavior: "smooth", block: "start" });
+        } else {
+          // Fallback: scroll to top of content
+          document.getElementById("report-root").scrollIntoView({ behavior: "smooth" });
+        }
+      });
+    });
+  </script>
+</body>
+</html>
