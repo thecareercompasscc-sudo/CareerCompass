@@ -1,11 +1,11 @@
 import os
 import csv
-import re
 import json
 import socket
 from datetime import datetime
 from pathlib import Path
 
+import requests
 from flask import (
     Flask,
     render_template,
@@ -14,13 +14,11 @@ from flask import (
     url_for,
     flash,
 )
-from flask_mail import Mail, Message
-
 from openai import OpenAI
 from docx import Document
 from PyPDF2 import PdfReader
 
-# ---- Global network timeout (for SMTP etc.) ----
+# ---- Global network timeout baseline ----
 socket.setdefaulttimeout(5)
 
 # ---------- Flask setup ----------
@@ -30,8 +28,6 @@ BASE_DIR = Path(__file__).resolve().parent
 app = Flask(__name__, template_folder=str(BASE_DIR / "templates"))
 app.secret_key = "change-me-in-production"
 
-mail = Mail()
-
 # Folders for uploads and simple email list
 UPLOAD_FOLDER = BASE_DIR / "uploads"
 EMAIL_LIST_FILE = BASE_DIR / "email_list.csv"
@@ -39,26 +35,6 @@ EMAIL_LIST_FILE = BASE_DIR / "email_list.csv"
 UPLOAD_FOLDER.mkdir(exist_ok=True)
 
 app.config["UPLOAD_FOLDER"] = str(UPLOAD_FOLDER)
-
-# ---------- Email (Flask-Mail) config ----------
-
-app.config["MAIL_SERVER"] = "smtp.gmail.com"
-app.config["MAIL_PORT"] = 587
-app.config["MAIL_USE_TLS"] = True
-
-# Use env vars in production (Railway); fall back to dev defaults locally
-app.config["MAIL_USERNAME"] = os.environ.get(
-    "MAIL_USERNAME", "the.career.compass.cc@gmail.com"
-)
-app.config["MAIL_PASSWORD"] = os.environ.get(
-    "MAIL_PASSWORD", "YOUR_GMAIL_APP_PASSWORD_HERE"
-)
-app.config["MAIL_DEFAULT_SENDER"] = (
-    "CareerCompass",
-    os.environ.get("MAIL_DEFAULT_SENDER", "the.career.compass.cc@gmail.com"),
-)
-
-mail.init_app(app)
 
 # ---------- OpenAI client (with timeout) ----------
 
@@ -154,13 +130,12 @@ SECTION C — Job Search Resources
 9. Cover Letter Opening Paragraph
 10. Job Search Tips
 
-[... rest of your long spec stays exactly as you had it ...]
+[... keep the rest of your long spec here ...]
 """
 
 # ---------- Helper: build user prompt ----------
 
 def build_user_prompt(cv_text: str) -> str:
-    # Trim very long CVs so we don't blow the context / time
     trimmed = (cv_text or "")[:6000]
     return f"""
 You are generating a CareerCompass report primarily for soon-to-be or recent graduates
@@ -230,10 +205,6 @@ def extract_text_from_upload(file_storage) -> str:
 # ---------- Helper: call OpenAI and get report HTML ----------
 
 def generate_report_html(cv_text: str) -> str:
-    """
-    Takes raw CV text and returns the HTML report from OpenAI.
-    If the OpenAI call fails or times out, returns a simple error block.
-    """
     if not cv_text or not cv_text.strip():
         return "<div class='section'><h2>Error</h2><p>No CV text provided.</p></div>"
 
@@ -246,7 +217,7 @@ def generate_report_html(cv_text: str) -> str:
                 {"role": "user", "content": build_user_prompt(cv_text)},
             ],
             temperature=0.3,
-            max_tokens=2500,  # a bit smaller to keep it quick
+            max_tokens=2500,
         )
         app.logger.info("OpenAI call succeeded.")
         return response.choices[0].message.content
@@ -332,11 +303,11 @@ def sync_email_to_sheet(email: str) -> None:
         sheet.append_row([email, timestamp])
         app.logger.info(f"Added {email} to Google Sheet.")
 
-# ---------- Helper: send report email (HTML + AI prompt pack) ----------
+# ---------- Helper: send report email via Resend API ----------
 
 def send_report_email(recipient_email: str, html_report: str) -> None:
     """
-    Send the generated report to the user via email.
+    Send the generated report to the user via email using Resend API.
 
     - No PDFs or attachments.
     - Includes an AI Prompt Pack (static) at the top.
@@ -347,20 +318,25 @@ def send_report_email(recipient_email: str, html_report: str) -> None:
         app.logger.info("No recipient email provided – skipping email send.")
         return
 
+    api_key = os.environ.get("RESEND_API_KEY")
+    from_email = os.environ.get("RESEND_FROM_EMAIL", "careercompass@example.com")
+
+    if not api_key:
+        app.logger.error("RESEND_API_KEY not set; cannot send email.")
+        return
+
     subject = "Your CareerCompass report + AI prompts to go deeper"
 
-    # Plain-text fallback body (for clients that don't render HTML)
-    body_text = (
+    # Plain-text fallback
+    text_body = (
         "Hi,\n\n"
         "Thanks for using CareerCompass.\n\n"
-        "Your personalised career report is included below as HTML.\n"
+        "Your personalised career report is included in this email as HTML.\n"
         "We’ve also added a set of AI prompts you can copy and paste into ChatGPT\n"
         "or any AI tool to get more personalised help from your report.\n\n"
-        "Best,\n"
-        "CareerCompass"
+        "Best,\nCareerCompass"
     )
 
-    # Static AI Prompt Pack HTML (independent of the report content)
     ai_prompts_html = """
     <div style="font-family: Arial, sans-serif; max-width: 720px; margin: 0 auto;">
       <h1 style="font-size: 22px; margin-bottom: 8px;">Your CareerCompass report</h1>
@@ -371,7 +347,7 @@ def send_report_email(recipient_email: str, html_report: str) -> None:
       </p>
 
       <h2 style="font-size: 18px; margin-top: 24px;">✨ Bonus: AI Prompt Pack</h2>
-      <p style="font-size: 14px; line-height: 1.5%;">
+      <p style="font-size: 14px; line-height: 1.5;">
         Copy your report, open your favourite AI tool, and paste <strong>your report</strong>
         followed by one of the prompts below.
       </p>
@@ -437,19 +413,37 @@ Using this CareerCompass report, summarise my professional positioning in 3–4 
     </div>
     """
 
-    msg = Message(
-        subject=subject,
-        recipients=[recipient_email],
-    )
-    msg.body = body_text
-    msg.html = ai_prompts_html + html_report
+    html_body = ai_prompts_html + html_report
+
+    data = {
+        "from": from_email,
+        "to": [recipient_email],
+        "subject": subject,
+        "html": html_body,
+        "text": text_body,
+    }
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
 
     try:
-        app.logger.info(f"Attempting to send report email to {recipient_email}...")
-        mail.send(msg)
-        app.logger.info(f"Report email sent to {recipient_email}.")
-    except Exception as e:
-        app.logger.error(f"Failed to send report email to {recipient_email}: {e}")
+        resp = requests.post(
+            "https://api.resend.com/emails",
+            headers=headers,
+            json=data,
+            timeout=10,
+        )
+        if resp.status_code >= 200 and resp.status_code < 300:
+            app.logger.info(f"Email sent to {recipient_email} via Resend.")
+        else:
+            app.logger.error(
+                f"Resend API error for {recipient_email}: "
+                f"status={resp.status_code}, body={resp.text}"
+            )
+    except requests.RequestException as e:
+        app.logger.error(f"Network error sending email via Resend to {recipient_email}: {e}")
 
 # ---------- Routes ----------
 
@@ -491,12 +485,12 @@ def generate_report():
     except Exception as e:
         app.logger.error(f"Failed to send report email: {e}")
 
-    # 3) Render on-screen HTML report page (no PDF download now)
+    # 3) Render on-screen HTML report page
     return render_template(
         "report.html",
         email=email,
         report_html=report_html,
-        download_url=None,  # if your template checks this, button will just not show
+        download_url=None,
     )
 
 if __name__ == "__main__":
