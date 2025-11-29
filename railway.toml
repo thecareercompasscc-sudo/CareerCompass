@@ -1,0 +1,11 @@
+[build]
+builder = "Nixpacks"
+
+[deploy]
+start = "python app.py"
+
+[deploy.environments.production]
+numReplicas = 1
+
+[variables]
+PORT = "8000"
