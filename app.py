@@ -3,6 +3,7 @@ import uuid
 import csv
 import re
 import json
+import textwrap
 from datetime import datetime
 from pathlib import Path
 
@@ -187,11 +188,11 @@ Here is the candidate’s CV:
 """
 
 # ---------- Helper: PDF generation (simple HTML → text PDF) ----------
-# ---------- Helper: PDF generation (simple HTML → text PDF) ----------
 
 class SimplePDF(FPDF):
     """Very simple PDF generator for text-based reports."""
     pass
+
 
 def create_pdf_from_html(html_content: str, pdf_path: Path) -> None:
     """
@@ -199,7 +200,7 @@ def create_pdf_from_html(html_content: str, pdf_path: Path) -> None:
 
     - Strips basic HTML tags
     - Normalises “smart” quotes, en/em dashes, bullets etc.
-    - Drops any characters that aren't supported by the built-in Latin-1 fonts
+    - Wraps long lines so FPDF never complains about horizontal space
     """
     pdf = SimplePDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -218,33 +219,40 @@ def create_pdf_from_html(html_content: str, pdf_path: Path) -> None:
     # Remove all remaining tags
     text = re.sub(r"<[^>]+>", "", text)
 
-    # ---- NORMALISE UNICODE FOR FPDF ----
+    # Normalise common “fancy” characters to ASCII
     replacements = {
-        "–": "-",   # en dash
-        "—": "-",   # em dash
+        "–": "-",
+        "—": "-",
         "“": '"',
         "”": '"',
         "‘": "'",
         "’": "'",
-        "•": "-",   # bullet to simple dash
+        "•": "-",
         "…": "...",
-        " ": " ",   # non-breaking space
+        "\u00a0": " ",  # non-breaking space → normal space
     }
     for bad, good in replacements.items():
         text = text.replace(bad, good)
 
-    # Finally, drop any characters that still aren't latin-1
+    # Drop anything still not latin-1 (fpdf core fonts limit)
     text = text.encode("latin-1", "ignore").decode("latin-1")
 
-    # Write line by line
+    # Write line by line, wrapping long lines to avoid the “not enough space” error
     for line in text.splitlines():
         line = line.strip()
         if not line:
             pdf.ln(4)
         else:
-            pdf.multi_cell(0, 6, line)
+            # wrap long lines into chunks
+            wrapped = textwrap.wrap(line, width=100)
+            if not wrapped:
+                pdf.ln(4)
+            else:
+                for chunk in wrapped:
+                    pdf.multi_cell(0, 6, chunk)
 
     pdf.output(str(pdf_path))
+
 
 # ---------- Helper: extract text from uploaded file ----------
 
@@ -398,21 +406,27 @@ def sync_email_to_sheet(email: str) -> None:
 
 # ---------- Helper: send report PDF to user ----------
 
-def send_report_email(recipient_email: str, pdf_path: Path) -> None:
+def send_report_email(recipient_email: str, pdf_path: Path, email_html: str) -> None:
+    """
+    Send the generated report to the user via email.
+
+    - Always sends an email (even if the PDF file is missing).
+    - Attaches the PDF if it exists.
+    - Uses the HTML report as the email body so it looks close to the site.
+    """
     recipient_email = (recipient_email or "").strip()
     if not recipient_email:
         app.logger.info("No recipient email provided – skipping email send.")
         return
 
-    if not pdf_path.exists():
-        app.logger.error(f"PDF path does not exist: {pdf_path}")
-        return
-
     subject = "Your CareerCompass Report"
+
+    # Plain-text fallback body (for clients that don't render HTML)
     body_text = (
         "Hi,\n\n"
         "Thanks for using CareerCompass.\n\n"
-        "Attached is your personalised career report as a PDF.\n\n"
+        "Your personalised career report is included below. "
+        "If a PDF attachment is present, you can also download it for your records.\n\n"
         "If you have any feedback or want help interpreting it, just reply to this email.\n\n"
         "Best,\n"
         "The CareerCompass Team"
@@ -420,11 +434,22 @@ def send_report_email(recipient_email: str, pdf_path: Path) -> None:
 
     msg = Message(subject=subject, recipients=[recipient_email])
     msg.body = body_text
+    msg.html = email_html  # use the rendered HTML report
 
-    with pdf_path.open("rb") as f:
-        pdf_data = f.read()
-    filename = pdf_path.name
-    msg.attach(filename, "application/pdf", pdf_data)
+    # Attach PDF only if it actually exists
+    if pdf_path and pdf_path.exists():
+        try:
+            with pdf_path.open("rb") as f:
+                pdf_data = f.read()
+            filename = pdf_path.name
+            msg.attach(filename, "application/pdf", pdf_data)
+            app.logger.info(f"Attached PDF {filename} for {recipient_email}.")
+        except Exception as e:
+            app.logger.error(f"Failed to attach PDF for {recipient_email}: {e}")
+    else:
+        app.logger.warning(
+            f"PDF path does not exist or is None for {recipient_email}: {pdf_path}"
+        )
 
     try:
         app.logger.info(f"Attempting to send report email to {recipient_email}...")
@@ -485,8 +510,10 @@ def generate_report():
     except Exception as e:
         app.logger.error(f"Failed to sync email to Google Sheet: {e}")
 
-    try:
-        send_report_email(email, pdf_path)
+        try:
+        # Use the same HTML we fed into the PDF as the email body,
+        # so the email looks close to the on-site report.
+        send_report_email(email, pdf_path, full_html_for_pdf)
     except Exception as e:
         app.logger.error(f"Failed to send report email: {e}")
 
