@@ -188,12 +188,14 @@ Here is the candidate’s CV:
 
 # ---------- Helper: PDF generation (simple HTML → text PDF) ----------
 
-class SimplePDF(FPDF):
-    """Very simple PDF generator for text-based reports."""
-    pass
-
-
 def create_pdf_from_html(html_content: str, pdf_path: Path) -> None:
+    """
+    Very simple HTML → text PDF converter.
+
+    - Strips basic HTML tags
+    - Normalises “smart” quotes, en/em dashes, bullets etc.
+    - Drops any characters that aren't supported by the built-in Latin-1 fonts
+    """
     pdf = SimplePDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
@@ -210,6 +212,24 @@ def create_pdf_from_html(html_content: str, pdf_path: Path) -> None:
 
     # Remove all remaining tags
     text = re.sub(r"<[^>]+>", "", text)
+
+    # ---- NORMALISE UNICODE FOR FPDF ----
+    replacements = {
+        "–": "-",   # en dash
+        "—": "-",   # em dash
+        "“": '"',
+        "”": '"',
+        "‘": "'",
+        "’": "'",
+        "•": "-",   # bullet to simple dash
+        "…": "...",
+        " ": " ",   # non-breaking space
+    }
+    for bad, good in replacements.items():
+        text = text.replace(bad, good)
+
+    # Finally, drop any characters that still aren't latin-1
+    text = text.encode("latin-1", "ignore").decode("latin-1")
 
     # Write line by line
     for line in text.splitlines():
