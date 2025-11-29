@@ -337,17 +337,8 @@
       color: #ffffff;
     }
 
-    .cc-btn-secondary {
-      background: #e5e7eb;
-      color: #111827;
-    }
-
     .cc-btn-primary:hover {
       opacity: 0.9;
-    }
-
-    .cc-btn-secondary:hover {
-      background: #d1d5db;
     }
   </style>
 </head>
@@ -368,9 +359,6 @@
       </p>
 
       <div class="cc-modal-actions">
-        <button type="button" id="cc-privacy-exit" class="cc-btn cc-btn-secondary">
-          Exit
-        </button>
         <button type="button" id="cc-privacy-accept" class="cc-btn cc-btn-primary">
           Agree &amp; Continue
         </button>
@@ -457,7 +445,6 @@
     const STORAGE_KEY = "cc_privacy_accepted_v1";
     const overlay = document.getElementById("cc-privacy-overlay");
     const acceptBtn = document.getElementById("cc-privacy-accept");
-    const exitBtn = document.getElementById("cc-privacy-exit");
 
     let privacyAccepted = false;
 
@@ -526,13 +513,6 @@
         localStorage.setItem(STORAGE_KEY, "true");
         closePrivacyModal();
         validateForm(); // re-check now that privacy is accepted
-      });
-    }
-
-    // Handle "Exit" (send them away)
-    if (exitBtn) {
-      exitBtn.addEventListener("click", function () {
-        window.location.href = "https://google.com";
       });
     }
 
