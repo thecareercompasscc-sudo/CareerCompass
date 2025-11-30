@@ -33,13 +33,12 @@ UPLOAD_FOLDER = BASE_DIR / "uploads"
 EMAIL_LIST_FILE = BASE_DIR / "email_list.csv"
 
 UPLOAD_FOLDER.mkdir(exist_ok=True)
-
 app.config["UPLOAD_FOLDER"] = str(UPLOAD_FOLDER)
 
 # ---------- OpenAI client (with timeout) ----------
 
-# Uses OPENAI_API_KEY from your environment.
-client = OpenAI(timeout=30)
+client = OpenAI(timeout=30)  # uses OPENAI_API_KEY from env
+
 
 # ---------- CareerCompass System Prompt ----------
 
@@ -133,6 +132,7 @@ SECTION C — Job Search Resources
 [... keep the rest of your long spec here ...]
 """
 
+
 # ---------- Helper: build user prompt ----------
 
 def build_user_prompt(cv_text: str) -> str:
@@ -156,6 +156,7 @@ Here is the candidate’s CV:
 
 {trimmed}
 """
+
 
 # ---------- Helper: extract text from uploaded file ----------
 
@@ -202,6 +203,7 @@ def extract_text_from_upload(file_storage) -> str:
 
     return text.strip()
 
+
 # ---------- Helper: call OpenAI and get report HTML ----------
 
 def generate_report_html(cv_text: str) -> str:
@@ -237,6 +239,7 @@ def generate_report_html(cv_text: str) -> str:
         </div>
         """
 
+
 # ---------- Helper: store email in CSV mailing list ----------
 
 def save_email_to_list(email: str) -> None:
@@ -252,12 +255,17 @@ def save_email_to_list(email: str) -> None:
             writer.writerow(["email", "timestamp_utc"])
         writer.writerow([email, datetime.utcnow().isoformat()])
 
+
 # ---------- Helper: sync a single email to Google Sheets ----------
 
 def sync_email_to_sheet(email: str) -> None:
     """
     Sends ONE email record to your Google Sheet with no duplicates.
     Uses GOOGLE_SERVICE_JSON env var.
+
+    Google Sheet:
+    - File name:  EMAIL LISTS
+    - First tab:  CareerCompass (we just use .sheet1 which points to the first tab)
     """
     email = (email or "").strip().lower()
     if not email:
@@ -288,8 +296,9 @@ def sync_email_to_sheet(email: str) -> None:
     creds = ServiceAccountCredentials.from_json_keyfile_dict(info, scope)
     client_gs = gspread.authorize(creds)
 
-    SHEET_NAME = "CareerCompass Emails"
-    sheet = client_gs.open(SHEET_NAME).sheet1
+    # 🔥 IMPORTANT: this must match the FILE NAME in Google Drive ("EMAIL LISTS")
+    SHEET_NAME = "EMAIL LISTS"
+    sheet = client_gs.open(SHEET_NAME).sheet1  # first tab (CareerCompass)
 
     existing = set()
     records = sheet.get_all_records()
@@ -302,6 +311,9 @@ def sync_email_to_sheet(email: str) -> None:
         timestamp = datetime.utcnow().isoformat()
         sheet.append_row([email, timestamp])
         app.logger.info(f"Added {email} to Google Sheet.")
+    else:
+        app.logger.info(f"Email {email} already in Google Sheet; skipping.")
+
 
 # ---------- Helper: send report email via Resend API ----------
 
@@ -319,7 +331,9 @@ def send_report_email(recipient_email: str, html_report: str) -> None:
         return
 
     api_key = os.environ.get("RESEND_API_KEY")
-    from_email = os.environ.get("RESEND_FROM_EMAIL", "careercompass@example.com")
+
+    # 🔥 Hard-coded valid from address (ignores RESEND_FROM_EMAIL env var)
+    from_email = "CareerCompass <onboarding@resend.dev>"
 
     if not api_key:
         app.logger.error("RESEND_API_KEY not set; cannot send email.")
@@ -435,7 +449,7 @@ Using this CareerCompass report, summarise my professional positioning in 3–4 
             json=data,
             timeout=10,
         )
-        if resp.status_code >= 200 and resp.status_code < 300:
+        if 200 <= resp.status_code < 300:
             app.logger.info(f"Email sent to {recipient_email} via Resend.")
         else:
             app.logger.error(
@@ -443,13 +457,17 @@ Using this CareerCompass report, summarise my professional positioning in 3–4 
                 f"status={resp.status_code}, body={resp.text}"
             )
     except requests.RequestException as e:
-        app.logger.error(f"Network error sending email via Resend to {recipient_email}: {e}")
+        app.logger.error(
+            f"Network error sending email via Resend to {recipient_email}: {e}"
+        )
+
 
 # ---------- Routes ----------
 
 @app.route("/", methods=["GET"])
 def index():
     return render_template("index.html")
+
 
 @app.route("/generate", methods=["POST"])
 def generate_report():
@@ -458,9 +476,7 @@ def generate_report():
     file = request.files.get("cv_file")
 
     file_text = extract_text_from_upload(file)
-    combined_cv = "\n\n".join(
-        part for part in [text_box, file_text] if part
-    ).strip()
+    combined_cv = "\n\n".join(part for part in [text_box, file_text] if part).strip()
 
     if not combined_cv:
         flash("Please paste your CV or upload a valid file.", "error")
@@ -492,6 +508,7 @@ def generate_report():
         report_html=report_html,
         download_url=None,
     )
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))  # Railway overrides this
