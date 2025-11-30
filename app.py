@@ -322,7 +322,7 @@ def send_report_email(recipient_email: str, html_report: str) -> None:
     Send the generated report to the user via email using Resend API.
 
     - No PDFs or attachments.
-    - Includes an AI Prompt Pack (static) at the top.
+    - Includes a short AI Prompt Pack at the top.
     - Appends the full HTML report underneath.
     """
     recipient_email = (recipient_email or "").strip()
@@ -332,7 +332,7 @@ def send_report_email(recipient_email: str, html_report: str) -> None:
 
     api_key = os.environ.get("RESEND_API_KEY")
 
-    # 🔥 Hard-coded valid from address (ignores RESEND_FROM_EMAIL env var)
+    # Hard-coded valid from address (Resend sandbox domain)
     from_email = "CareerCompass <onboarding@resend.dev>"
 
     if not api_key:
@@ -345,88 +345,53 @@ def send_report_email(recipient_email: str, html_report: str) -> None:
     text_body = (
         "Hi,\n\n"
         "Thanks for using CareerCompass.\n\n"
-        "Your personalised career report is included in this email as HTML.\n"
+        "Your personalised career report is included below.\n"
         "We’ve also added a set of AI prompts you can copy and paste into ChatGPT\n"
         "or any AI tool to get more personalised help from your report.\n\n"
         "Best,\nCareerCompass"
     )
 
+    # Shorter AI Prompt Pack so it’s less likely to get clipped
     ai_prompts_html = """
     <div style="font-family: Arial, sans-serif; max-width: 720px; margin: 0 auto;">
       <h1 style="font-size: 22px; margin-bottom: 8px;">Your CareerCompass report</h1>
-      <p style="font-size: 14px; line-height: 1.5;">
-        Below is your full CareerCompass report. To get even more value from it,
-        you can copy your report into an AI tool (like ChatGPT) and use the
-        prompts in this email to go deeper.
+
+      <p style="font-size: 14px; line-height: 1.5; margin-bottom: 16px;">
+        Below is your full CareerCompass report. To squeeze even more value from it,
+        copy your report into an AI tool (like ChatGPT) and use the prompts below.
       </p>
 
-      <h2 style="font-size: 18px; margin-top: 24px;">✨ Bonus: AI Prompt Pack</h2>
-      <p style="font-size: 14px; line-height: 1.5;">
-        Copy your report, open your favourite AI tool, and paste <strong>your report</strong>
-        followed by one of the prompts below.
+      <h2 style="font-size: 18px; margin: 20px 0 8px;">✨ Bonus: AI Prompt Pack</h2>
+
+      <p style="font-size: 13px; line-height: 1.6; margin: 0 0 8px;">
+        <strong>1) Turn my report into a CV rewrite</strong><br>
+        <code style="font-family: Menlo, Consolas, monospace; background:#f5f5f5; padding:4px 6px; border-radius:3px; display:block;">
+Here is my personalised career report from CareerCompass. Rewrite my CV using the strengths, skill gaps, and target roles listed. Make it ATS-friendly and aligned to the roles I’m best suited for.
+        </code>
       </p>
 
-      <div style="margin-top: 16px; font-size: 13px; line-height: 1.6;">
-        <h3 style="font-size: 16px; margin-bottom: 4px;">1) Turn my report into a CV rewrite</h3>
-        <pre style="white-space: pre-wrap; font-family: Menlo, Consolas, monospace; background: #f5f5f5; padding: 8px; border-radius: 4px;">
-Here is my personalised career report from CareerCompass. Rewrite my CV using the strengths, skill gaps, and target roles listed. Make it ATS-friendly, action-driven, and aligned to the roles I’m best suited for.
-        </pre>
-
-        <h3 style="font-size: 16px; margin-bottom: 4px;">2) Weekly job search strategy</h3>
-        <pre style="white-space: pre-wrap; font-family: Menlo, Consolas, monospace; background: #f5f5f5; padding: 8px; border-radius: 4px;">
+      <p style="font-size: 13px; line-height: 1.6; margin: 0 0 8px;">
+        <strong>2) Weekly job search strategy</strong><br>
+        <code style="font-family: Menlo, Consolas, monospace; background:#f5f5f5; padding:4px 6px; border-radius:3px; display:block;">
 Here is my personalised career report from CareerCompass. Create a realistic weekly job search schedule with daily tasks, tailored to my background and the target roles mentioned.
-        </pre>
+        </code>
+      </p>
 
-        <h3 style="font-size: 16px; margin-bottom: 4px;">3) Likely interview questions + model answers</h3>
-        <pre style="white-space: pre-wrap; font-family: Menlo, Consolas, monospace; background: #f5f5f5; padding: 8px; border-radius: 4px;">
-Using my CareerCompass report, list 10 likely interview questions for the roles suggested and provide strong, tailored sample answers based on my experience.
-        </pre>
-
-        <h3 style="font-size: 16px; margin-bottom: 4px;">4) Rewrite my LinkedIn profile</h3>
-        <pre style="white-space: pre-wrap; font-family: Menlo, Consolas, monospace; background: #f5f5f5; padding: 8px; border-radius: 4px;">
+      <p style="font-size: 13px; line-height: 1.6; margin: 0 0 8px;">
+        <strong>3) Rewrite my LinkedIn profile</strong><br>
+        <code style="font-family: Menlo, Consolas, monospace; background:#f5f5f5; padding:4px 6px; border-radius:3px; display:block;">
 Rewrite my LinkedIn headline and About section using the insights from this CareerCompass report. Make it concise, employer-focused, and clearly aligned with the roles you think I should target.
-        </pre>
+        </code>
+      </p>
 
-        <h3 style="font-size: 16px; margin-bottom: 4px;">5) 30-day learning plan for my skill gaps</h3>
-        <pre style="white-space: pre-wrap; font-family: Menlo, Consolas, monospace; background: #f5f5f5; padding: 8px; border-radius: 4px;">
-Here is my CareerCompass report. Based on the skill gaps identified, create a focused 30-day learning plan with weekly milestones and a few suggested resources or practice ideas.
-        </pre>
-
-        <h3 style="font-size: 16px; margin-bottom: 4px;">6) Tailor my CV to a job description</h3>
-        <pre style="white-space: pre-wrap; font-family: Menlo, Consolas, monospace; background: #f5f5f5; padding: 8px; border-radius: 4px;">
-Using the strengths and target roles in this CareerCompass report, help me tailor my CV to the following job description. Rewrite my bullet points and highlight what I should emphasise.
-
-Job description:
-[Paste job description here]
-        </pre>
-
-        <h3 style="font-size: 16px; margin-bottom: 4px;">7) Portfolio or project ideas</h3>
-        <pre style="white-space: pre-wrap; font-family: Menlo, Consolas, monospace; background: #f5f5f5; padding: 8px; border-radius: 4px;">
-Based on this CareerCompass report, suggest 3–5 practical project or portfolio ideas I can complete in 2–6 weeks to make myself more competitive for the roles mentioned.
-        </pre>
-
-        <h3 style="font-size: 16px; margin-bottom: 4px;">8) Networking message ideas</h3>
-        <pre style="white-space: pre-wrap; font-family: Menlo, Consolas, monospace; background: #f5f5f5; padding: 8px; border-radius: 4px;">
-Using the details in this CareerCompass report, write 3 short networking messages I can send to people already working in the roles you recommend for me.
-        </pre>
-
-        <h3 style="font-size: 16px; margin-bottom: 4px;">9) Turn skill gaps into weekly actions</h3>
-        <pre style="white-space: pre-wrap; font-family: Menlo, Consolas, monospace; background: #f5f5f5; padding: 8px; border-radius: 4px;">
-Take the skill gaps listed in this CareerCompass report and break them down into practical weekly actions I can follow over the next 2–3 months.
-        </pre>
-
-        <h3 style="font-size: 16px; margin-bottom: 4px;">10) Define my professional positioning</h3>
-        <pre style="white-space: pre-wrap; font-family: Menlo, Consolas, monospace; background: #f5f5f5; padding: 8px; border-radius: 4px;">
-Using this CareerCompass report, summarise my professional positioning in 3–4 sentences: who I am, what I offer, and the types of problems I can solve for employers.
-        </pre>
-      </div>
-
-      <hr style="margin: 32px 0; border: none; border-top: 1px solid #dddddd;">
+      <hr style="margin: 24px 0; border: none; border-top: 1px solid #dddddd;">
 
       <h2 style="font-size: 18px; margin-bottom: 12px;">Your full CareerCompass report</h2>
     </div>
     """
 
+    # Combine prompts + the HTML report from the model
+    # html_report already contains <div class="section"> etc. That’s fine for emails.
     html_body = ai_prompts_html + html_report
 
     data = {
@@ -460,6 +425,7 @@ Using this CareerCompass report, summarise my professional positioning in 3–4 
         app.logger.error(
             f"Network error sending email via Resend to {recipient_email}: {e}"
         )
+
 
 
 # ---------- Routes ----------
