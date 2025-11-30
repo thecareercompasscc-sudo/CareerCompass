@@ -14,7 +14,7 @@ client = gspread.authorize(creds)
 
 # Open your sheet
 SHEET_NAME = "EMAIL LISTS"
-sheet = client.open(SHEET_NAME).sheet1
+sheet = client.open(SHEET_NAME).CareerCompass
 
 # Load existing sheet emails
 existing = {row["email"].strip().lower() for row in sheet.get_all_records()}
