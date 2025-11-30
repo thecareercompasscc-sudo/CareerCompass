@@ -13,7 +13,7 @@ creds = ServiceAccountCredentials.from_json_keyfile_name(
 client = gspread.authorize(creds)
 
 # Open your sheet
-SHEET_NAME = "CareerCompass Emails"
+SHEET_NAME = "EMAIL LISTS"
 sheet = client.open(SHEET_NAME).sheet1
 
 # Load existing sheet emails
