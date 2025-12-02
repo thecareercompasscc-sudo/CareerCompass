@@ -296,7 +296,6 @@ def sync_email_to_sheet(email: str) -> None:
     creds = ServiceAccountCredentials.from_json_keyfile_dict(info, scope)
     client_gs = gspread.authorize(creds)
 
-    # 🔥 IMPORTANT: this must match the FILE NAME in Google Drive ("EMAIL LISTS")
     SHEET_NAME = "EMAIL LISTS"
     sheet = client_gs.open(SHEET_NAME).sheet1  # first tab (CareerCompass)
 
@@ -331,13 +330,17 @@ def send_report_email(recipient_email: str, html_report: str) -> None:
         return
 
     api_key = os.environ.get("RESEND_API_KEY")
-
-    # Hard-coded valid from address (Resend sandbox domain)
-    from_email = "CareerCompass <onboarding@resend.dev>"
-
     if not api_key:
         app.logger.error("RESEND_API_KEY not set; cannot send email.")
         return
+
+    # Use your verified domain email.
+    # Set RESEND_FROM_EMAIL in Railway to something like:
+    # "CareerCompass <report@career-compass.uk>"
+    from_email = os.environ.get(
+        "RESEND_FROM_EMAIL",
+        "CareerCompass <report@career-compass.uk>",
+    )
 
     subject = "Your CareerCompass report + AI prompts to go deeper"
 
@@ -351,7 +354,6 @@ def send_report_email(recipient_email: str, html_report: str) -> None:
         "Best,\nCareerCompass"
     )
 
-    # Shorter AI Prompt Pack so it’s less likely to get clipped
     ai_prompts_html = """
     <div style="font-family: Arial, sans-serif; max-width: 720px; margin: 0 auto;">
       <h1 style="font-size: 22px; margin-bottom: 8px;">Your CareerCompass report</h1>
@@ -390,8 +392,6 @@ Rewrite my LinkedIn headline and About section using the insights from this Care
     </div>
     """
 
-    # Combine prompts + the HTML report from the model
-    # html_report already contains <div class="section"> etc. That’s fine for emails.
     html_body = ai_prompts_html + html_report
 
     data = {
@@ -425,7 +425,6 @@ Rewrite my LinkedIn headline and About section using the insights from this Care
         app.logger.error(
             f"Network error sending email via Resend to {recipient_email}: {e}"
         )
-
 
 
 # ---------- Routes ----------
