@@ -387,10 +387,12 @@ def send_report_email(
     Send the generated report to the user via email using Resend API.
 
     Order:
-    1) Feedback + Lifetime Membership draw CTA
-    2) Lifetime Membership & referral explanation
-    3) Bonus: AI Prompt Pack (incl. interview simulator)
-    4) Full CareerCompass report at the bottom
+    1) Beta thank-you + report-at-bottom notice
+    2) Feedback + Lifetime Membership draw CTA
+    3) Lifetime Membership & referral explanation (+ keep-it-free line)
+    4) Share link + referral points
+    5) Single strong AI prompt (interview simulator)
+    6) Full CareerCompass report at the bottom
     """
     recipient_email = (recipient_email or "").strip()
     if not recipient_email:
@@ -409,122 +411,141 @@ def send_report_email(
 
     subject = "Your CareerCompass report + Lifetime Membership draw"
 
+    feedback_form_url = (feedback_form_url or "").strip()
+    # Change this to your actual landing page URL if needed
+    share_url = "https://career-compass.uk"
+
     text_body = (
         "Hi,\n\n"
-        "Thanks for using CareerCompass.\n\n"
-        "You’ll find your personalised career report at the bottom of this email.\n"
+        "Thanks for trying the CareerCompass beta.\n\n"
+        "You’ll find your full CareerCompass report at the bottom of this email.\n"
         "If you can spare 30 seconds to share feedback, you can enter this month’s\n"
         "draw for CareerCompass Lifetime Membership.\n\n"
         "Best,\nCareerCompass"
     )
 
-    feedback_form_url = (feedback_form_url or "").strip()
-
     html_parts = []
 
-    # 1) Feedback + draw CTA
+    # Wrapper start
     html_parts.append(
-        f"""
-        <div style="font-family: Arial, sans-serif; max-width: 720px; margin: 0 auto;">
-          <p>Hi there,</p>
+        "<div style='font-family: Arial, sans-serif; max-width: 720px; margin: 0 auto;'>"
+    )
 
-          <h2 style="font-size: 20px; margin: 0 0 8px;">Enter this month’s draw for CareerCompass Lifetime Membership</h2>
-          <p style="font-size: 14px; line-height: 1.5;">
-            Share your feedback in about 30 seconds and you’ll be entered into this month’s draw to win
-            <strong>CareerCompass Lifetime Membership</strong> — giving you free access to all current and future tools.
-          </p>
+    # 1) Greeting + report notice + why feedback matters for them
+    html_parts.append(
+        """
+        <p style="font-size:14px; line-height:1.6;">
+          Hi,<br><br>
+          Thanks for trying the CareerCompass beta. 🙌<br>
+          You’ll find your full CareerCompass report at the bottom of this email 👇
+        </p>
+        <p style="font-size:14px; line-height:1.6;">
+          If you want to help keep CareerCompass free for students and early-career people,
+          the biggest thing you can do is share <strong>30 seconds of feedback</strong>.
+          As a thank you, you’ll be entered into this month’s draw for
+          <strong>CareerCompass Lifetime Membership</strong>.
+        </p>
+        """
+    )
 
-          <h3 style="font-size: 16px; margin: 16px 0 6px;">🎁 Monthly prizes</h3>
-          <ul style="font-size: 14px; line-height: 1.6; padding-left: 20px;">
-            <li><strong>3 winners</strong> chosen at random from all feedback submissions</li>
-            <li><strong>3 winners</strong> from the top referrers</li>
-          </ul>
+    # 2) Monthly prizes + feedback form CTA
+    html_parts.append(
+        """
+        <h3 style="font-size:16px; margin:16px 0 6px;">🎁 Monthly prizes</h3>
+        <p style="font-size:14px; line-height:1.6; margin:0 0 4px;">
+          Each month we award <strong>6 Lifetime Memberships</strong>:
+        </p>
+        <ul style="font-size:14px; line-height:1.6; padding-left:20px; margin-top:4px;">
+          <li><strong>3 winners</strong> chosen at random from all feedback submissions</li>
+          <li><strong>3 winners</strong> from the top referrers</li>
+        </ul>
         """
     )
 
     if feedback_form_url:
         html_parts.append(
             f"""
-          <p style="font-size: 14px; margin: 12px 0;">
-            👉 <strong>Complete the feedback form and enter the draw:</strong><br>
-            <a href="{feedback_form_url}" style="color:#0957D0;">{feedback_form_url}</a>
-          </p>
-        """
+            <p style="font-size:14px; margin:12px 0;">
+              👉 <strong>Complete the feedback form and enter the draw:</strong><br>
+              <a href="{feedback_form_url}" style="color:#0957D0;">{feedback_form_url}</a>
+            </p>
+            """
         )
 
-    html_parts.append("<hr style='margin: 20px 0; border: none; border-top: 1px solid #dddddd;'>")
+    html_parts.append(
+        "<hr style='margin:20px 0; border:none; border-top:1px solid #dddddd;'>"
+    )
 
-    # 2) Lifetime Membership & referral explanation
+    # 3) Lifetime Membership & referral explanation + keep-it-free line
     html_parts.append(
         f"""
-          <h3 style="font-size: 16px; margin: 0 0 8px;">Your Lifetime Membership & referral code</h3>
-          <p style="font-size: 14px; line-height: 1.6;">
-            CareerCompass is free while we’re in beta, but this won’t always be the case.
-            A <strong>Lifetime Membership</strong> means you’ll never pay for any of our future
-            premium tools — including upcoming products focused on career progression, earning more,
-            and building extra income streams.
-          </p>
-
-          <p style="font-size: 14px; line-height: 1.6;">
-            Your personal referral code: <strong>{referral_code or "N/A"}</strong>
-          </p>
-
-          <p style="font-size: 14px; line-height: 1.6;">
-            You can boost your chances of winning:
-          </p>
-          <ul style="font-size: 14px; line-height: 1.6; padding-left: 20px;">
-            <li>Entering someone else’s referral code in the feedback form → <strong>+1 point</strong></li>
-            <li>Each person who enters your code in the form → <strong>+1 point</strong></li>
-          </ul>
-
-          <p style="font-size: 14px; line-height: 1.6;">
-            More points = a higher chance of winning Lifetime Membership.
-          </p>
-
-          <hr style="margin: 20px 0; border: none; border-top: 1px solid #dddddd;">
-
-          <h3 style="font-size: 16px; margin: 0 0 8px;">✨ Bonus: AI Prompt Pack</h3>
-          <p style="font-size: 13px; line-height: 1.6; margin: 0 0 8px;">
-            You can paste your CareerCompass report into ChatGPT (or any AI tool) and use these prompts:
-          </p>
-
-          <p style="font-size: 13px; line-height: 1.6; margin: 0 0 8px;">
-            <strong>1) Turn my report into a CV rewrite</strong><br>
-            <code style="font-family: Menlo, Consolas, monospace; background:#f5f5f5; padding:4px 6px; border-radius:3px; display:block;">
-Here is my personalised career report from CareerCompass. Rewrite my CV using the strengths, target roles, and skill gaps in this report. Make it ATS-friendly and tailored to the realistic roles you think I should focus on.
-            </code>
-          </p>
-
-          <p style="font-size: 13px; line-height: 1.6; margin: 0 0 8px;">
-            <strong>2) Weekly job search plan</strong><br>
-            <code style="font-family: Menlo, Consolas, monospace; background:#f5f5f5; padding:4px 6px; border-radius:3px; display:block;">
-Here is my personalised career report from CareerCompass. Create a realistic weekly job search plan for the next 8 weeks, with daily actions that fit my background and the roles you’ve recommended.
-            </code>
-          </p>
-
-          <p style="font-size: 13px; line-height: 1.6; margin: 0 0 8px;">
-            <strong>3) Rewrite my LinkedIn profile</strong><br>
-            <code style="font-family: Menlo, Consolas, monospace; background:#f5f5f5; padding:4px 6px; border-radius:3px; display:block;">
-Here is my personalised career report from CareerCompass. Rewrite my LinkedIn headline and About section so they clearly position me for the roles you’ve suggested, using simple, employer-focused language.
-            </code>
-          </p>
-
-          <p style="font-size: 13px; line-height: 1.6; margin: 0 0 8px;">
-            <strong>4) Interview simulator for one of my target roles</strong><br>
-            <code style="font-family: Menlo, Consolas, monospace; background:#f5f5f5; padding:4px 6px; border-radius:3px; display:block;">
-Here is my personalised career report from CareerCompass. Act as an interviewer for one of the roles you recommended. Ask me realistic interview questions one at a time. After each answer, give me honest but encouraging feedback and a better example answer based on my background.
-            </code>
-          </p>
-
-          <hr style="margin: 24px 0; border: none; border-top: 1px solid #dddddd;">
-
-          <h2 style="font-size: 18px; margin-bottom: 12px;">Your full CareerCompass report</h2>
-        </div>
+        <h3 style="font-size:16px; margin:0 0 8px;">Your Lifetime Membership & referral code</h3>
+        <p style="font-size:14px; line-height:1.6;">
+          CareerCompass is free while we’re in beta, but this won’t always be the case.
+          A <strong>Lifetime Membership</strong> means you’ll never pay for any of our future
+          premium tools — including upcoming products focused on career progression,
+          earning more, and building extra income streams.
+        </p>
+        <p style="font-size:14px; line-height:1.6;">
+          Your personal referral code: <strong>{referral_code or "N/A"}</strong>
+        </p>
+        <p style="font-size:14px; line-height:1.6;">
+          You can boost your chances of winning:
+        </p>
+        <ul style="font-size:14px; line-height:1.6; padding-left:20px;">
+          <li>Entering someone else’s referral code in the feedback form → <strong>+1 point</strong></li>
+          <li>Each person who enters your code in the form → <strong>+1 point</strong></li>
+        </ul>
+        <p style="font-size:14px; line-height:1.6;">
+          More points = a higher chance of winning Lifetime Membership.
+        </p>
         """
     )
 
-    # 4) Append the actual report HTML
+    # 4) Share link
+    html_parts.append(
+        f"""
+        <p style="font-size:14px; line-height:1.6;">
+          If you want to share CareerCompass directly, you can send this link to a friend 👇<br>
+          <a href="{share_url}" style="color:#0957D0;">{share_url}</a>
+        </p>
+
+        <hr style="margin:20px 0; border:none; border-top:1px solid #dddddd;">
+        """
+    )
+
+    # 5) Single strong AI prompt (interview simulator)
+    html_parts.append(
+        """
+        <h3 style="font-size:16px; margin:0 0 8px;">✨ Bonus: Interview simulator prompt</h3>
+        <p style="font-size:13px; line-height:1.6; margin:0 0 8px;">
+          You can paste your CareerCompass report into ChatGPT (or any AI tool) and use this prompt:
+        </p>
+        <p style="font-size:13px; line-height:1.6; margin:0 0 8px;">
+          <code style="font-family:Menlo,Consolas,monospace;background:#f5f5f5;padding:4px 6px;border-radius:3px;display:block;">
+Here is my personalised career report from CareerCompass. Act as an interviewer for one of the roles you recommended. Ask me realistic interview questions one at a time. After each answer, give me honest but encouraging feedback and a stronger example answer based on my background.
+          </code>
+        </p>
+
+        <hr style="margin:24px 0; border:none; border-top:1px solid #dddddd;">
+
+        <h2 style="font-size:18px; margin-bottom:12px;">Your full CareerCompass report</h2>
+        """
+    )
+
+    # 6) Append actual report
     html_parts.append(html_report)
+
+    # Sign-off after report
+    html_parts.append(
+        """
+        <p style="font-size:14px; line-height:1.6; margin-top:24px;">
+          Thanks for being part of the CareerCompass beta,<br>
+          <strong>The CareerCompass Team</strong>
+        </p>
+        </div>
+        """
+    )
 
     html_body = "".join(html_parts)
 
@@ -611,13 +632,14 @@ def generate_report():
     except Exception as e:
         app.logger.error(f"Failed to send report email: {e}")
 
-    # 5) Render on-screen HTML report page
+    # 5) Render on-screen HTML report page (with feedback link too)
     return render_template(
         "report.html",
         email=email,
         report_html=report_html,
         download_url=None,
         referral_code=referral_code,
+        feedback_form_url=feedback_form_url,
     )
 
 
