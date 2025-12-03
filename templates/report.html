@@ -91,7 +91,7 @@
       background: #ffffff;
     }
 
-    /* Top actions: back button + email note */
+    /* Top actions: back button + email note + feedback link */
     .top-actions {
       display: flex;
       flex-wrap: wrap;
@@ -270,19 +270,28 @@
       </header>
 
       <main class="body">
-        <!-- Back to form + email note -->
+        <!-- Back to form + email note + feedback link -->
         <div class="top-actions">
           <a href="{{ url_for('index') }}" class="btn-back">
             <span class="icon">←</span>
             <span>Back to form</span>
           </a>
 
-          {% if email %}
-            <p class="email-note">
-              A PDF copy of this report has been emailed to <strong>{{ email }}</strong>.  
-              If you don’t see it, check your spam/junk folder.
-            </p>
-          {% endif %}
+          <div>
+            {% if email %}
+              <p class="email-note">
+                A copy of this report has been emailed to <strong>{{ email }}</strong>.  
+                If you don’t see it, check your spam/junk folder.
+              </p>
+            {% endif %}
+
+            {% if feedback_form_url %}
+              <p class="email-note">
+                🎁 30s feedback = chance to win Lifetime Membership – 
+                <a href="{{ feedback_form_url }}" target="_blank">open feedback form</a>.
+              </p>
+            {% endif %}
+          </div>
         </div>
 
         <!-- Pill navigation -->
