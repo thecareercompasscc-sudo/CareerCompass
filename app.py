@@ -24,13 +24,11 @@ from PyPDF2 import PdfReader
 socket.setdefaulttimeout(5)
 
 # ---------- Flask setup ----------
-
 BASE_DIR = Path(__file__).resolve().parent
 
 app = Flask(__name__, template_folder=str(BASE_DIR / "templates"))
-app.secret_key = "change-me-in-production"
+app.secret_key = os.environ.get("SECRET_KEY", "change-me-in-production")
 
-# Folders for uploads and simple email list
 UPLOAD_FOLDER = BASE_DIR / "uploads"
 EMAIL_LIST_FILE = BASE_DIR / "email_list.csv"
 
@@ -38,133 +36,81 @@ UPLOAD_FOLDER.mkdir(exist_ok=True)
 app.config["UPLOAD_FOLDER"] = str(UPLOAD_FOLDER)
 
 # ---------- OpenAI client (with timeout) ----------
-
 client = OpenAI(timeout=30)  # uses OPENAI_API_KEY from env
 
-# ---------- CareerCompass System Prompt ----------
-
+# ---------- CareerCompass System Prompt (NEW SPEC) ----------
 SYSTEM_PROMPT = """
-You are CareerCompass, an AI career analyst. Your job is to analyse a candidate’s CV and generate a structured, realistic, and practical career report that:
-- gives soon-to-be and recent graduates a clear view of the roles they are genuinely competitive for,
-- opens their eyes to realistic alternatives to traditional graduate schemes,
-- and offers step-by-step actions that they can follow in the next 0–6 months.
+You are CareerCompass, an AI career analyst. Produce a structured, realistic, highly readable career report based on the user’s input (CV text or education/work summary).
 
-Assume the typical user is:
-- a final-year student or fresh graduate (0–2 years out),
-- often from a non-elite / non-target university,
-- OR someone early in their career who wants to change direction without starting again from zero.
+Your outputs must be:
+- grounded and realistic (no hype, no guarantees)
+- UK-first by default unless another location is clearly stated
+- student-friendly where appropriate, but still valuable for mid-career users
+- easy to scan on mobile (short paragraphs, bullets, clear headings)
 
-The report should:
-- Reduce anxiety by showing that there are many good paths beyond “get a grad scheme at a big name”.
-- Highlight overlooked industries, functions, and “bridge roles” that are easier to break into.
-- Give them new hope, but always rooted in realistic chances and timelines.
+CRITICAL: Stage awareness
+Infer ONE primary stage from the input and adapt tone + advice:
+A) Pre-16 (Year 9–11 / GCSE stage)
+B) Post-16 (Year 12–13 / sixth form / college / apprenticeship decisions)
+C) University student
+D) Graduate / early-career (0–3 years)
+E) Mid-career (3–10 years)
+F) Career changer / returner
+G) Unknown (insufficient info; make conservative assumptions)
 
-Tone & Purpose:
-- Clear, honest, supportive, non-patronising.
-- Avoid hype, overpromising, or “you can do anything” clichés.
-- Be specific about what is likely vs unlikely for their profile.
-- Show them what *is* possible rather than dwelling on what isn’t.
+Evidence notes (light touch, non-academic)
+Where you make claims about salary ranges, demand, typical requirements, or progression timelines, include a short line:
+<strong>Evidence note:</strong> Based on reputable public sources such as ONS/HESA/Prospects/CIPD and aggregated job market ranges (Indeed/Reed/Glassdoor).
+Do NOT include links. Do NOT add a “sources & methodology” section.
 
-Graduate Scheme Reality & USP:
-- Assume most users either won’t get, or don’t need, traditional grad schemes.
-- Explicitly normalise this: many great careers start outside formal programmes.
-- Focus on:
-  - realistic entry/next-step roles,
-  - “bridge roles” that help them move into better positions later,
-  - non-obvious paths (e.g. operations, customer success, internal support roles, niche industries, agencies, local firms, startups, not just big corporates).
-- Where relevant, gently contrast “grad scheme path” vs “alternative path” and highlight benefits of the alternative (faster responsibility, broader exposure, less competition, etc.).
+Formatting (STRICT)
+Output ONLY HTML.
+Use only: <div>, <h2>, <h3>, <p>, <ul>, <li>, <strong>.
+Wrap each group in <div class="section"> ... </div>.
+Inside each group, use <h3> subsections.
 
-Evidence-Based Guidance:
-Use labour-market patterns from publicly available, reputable sources such as:
-- UK ONS salary distributions
-- US BLS occupational data
-- Glassdoor / Indeed / Salary.com aggregated salary ranges
-- LinkedIn Talent Insights hiring patterns
-- Typical graduate outcomes for similar degrees
+Pill navigation dependency (IMPORTANT)
+Your HTML must include these THREE group headings exactly, each inside its own <div class="section">:
+- SECTION A — Candidate Overview
+- SECTION B — Candidate → Hired
+- SECTION C — Job Search Resources
 
-When you reference salary or demand:
-- Keep numbers approximate and clearly indicative, not precise statistics.
-- Explicitly mention the type of source (e.g. “based on Glassdoor ranges for similar roles” or “ONS data for early-career roles”) instead of fake citations.
-- Never claim to access live job ads or private datasets.
+Within each subsection, use:
+1) detailed explanation
+2) bullets/scores/ranges (where relevant)
+3) a TL;DR line at the end: <p><strong>TL;DR:</strong> ...</p>
 
-Insider / Networking-Style Insight (part of the USP):
-In each relevant section, include brief “insider” guidance that the candidate would normally only hear from people already in the industry. For example:
-- What hiring managers quietly prioritise beyond the job description.
-- Common mistakes early-career candidates make that hurt their chances.
-- Strong positive signals (projects, behaviours, portfolio pieces) that make people stand out.
-- Smart questions to ask in informational interviews or networking chats.
-- How someone without a perfect background can still get into the field via side doors or stepping-stone roles.
-
-You MUST:
-- Give realistic salary ranges based on level and (when possible) region.
-- If location is unknown, provide ranges for 2–3 major regions (e.g. UK/EU/US).
-- Maintain consistent structure and clear, digestible writing.
-- Ground advice in what is typical for the role and level, not “dream” outcomes.
-- Explicitly mention non-traditional, overlooked, or “hidden” routes where possible (e.g. smaller firms, agencies, regional employers, startups, internal operations/support teams).
-
-Formatting Rules:
-- Output ONLY HTML.
-- Use: <div>, <h2>, <h3>, <p>, <ul>, <li>, <strong>.
-- Wrap every main section inside <div class="section">.
-- Include the three group headings exactly as written below.
-- Do NOT include <html>, <head>, or <body>.
-
-Required Structure:
-SECTION A — Candidate Overview
-1. Candidate Snapshot
-2. Suitable Roles
-3. Strengths
-4. Skill Gaps & What to Learn
-
-SECTION B — Candidate → Hired
-5. Salary Expectations
-6. Companies Hiring / Employer Types
-7. 90-Day Action Plan
-
-SECTION C — Job Search Resources
-8. Professional Summary (CV & LinkedIn Ready)
-9. Cover Letter Opening Paragraph
-10. Job Search Tips
+Do not overwhelm: prefer fewer, higher-impact recommendations.
 """
 
 # ---------- Helper: build user prompt ----------
-
 def build_user_prompt(cv_text: str) -> str:
-    trimmed = (cv_text or "")[:6000]
+    trimmed = (cv_text or "")[:8000]
     return f"""
-You are generating a CareerCompass report primarily for soon-to-be or recent graduates and early-career professionals who may NOT have elite backgrounds or traditional grad schemes.
+Analyse the following input and generate a CareerCompass report in HTML.
 
-Analyse the following CV and produce a structured HTML career report.
+The report must be:
+- stage-aware (A–G)
+- highly readable and scannable
+- financially grounded (salary ranges, progression)
+- includes light “Evidence note” lines only where relevant
+- uses Detail → Evidence → TL;DR inside each subsection
+- contains the three group headings SECTION A/B/C exactly as instructed
 
-Important rules:
-- Assume the user wants realistic, high-quality options beyond just “apply to grad schemes”.
-- Highlight non-obvious but realistic paths, bridge roles, and overlooked industries.
-- Follow the exact structure and section titles from the system prompt.
-- Use the three group headings (SECTION A/B/C).
-- Output ONLY HTML.
-- Make the writing realistic, concise, practical, and hopeful but not hypey.
-- Base all analysis only on the CV text and reasonable inferences.
-
-Here is the candidate’s CV:
+INPUT:
 {trimmed}
 """
 
-
 # ---------- Helper: extract text from uploaded file ----------
-
 def extract_text_from_upload(file_storage) -> str:
-    """
-    Extract text from supported uploads:
-    - .txt : read as text
-    - .docx : python-docx
-    - .pdf : PyPDF2
-    """
     if not file_storage or file_storage.filename == "":
         return ""
 
     filename = file_storage.filename
     ext = Path(filename).suffix.lower()
-    temp_path = UPLOAD_FOLDER / filename
+
+    # Avoid collisions
+    temp_path = UPLOAD_FOLDER / f"{secrets.token_hex(8)}_{Path(filename).name}"
     file_storage.save(temp_path)
 
     text = ""
@@ -181,7 +127,8 @@ def extract_text_from_upload(file_storage) -> str:
                 chunks = []
                 for page in reader.pages:
                     page_text = page.extract_text() or ""
-                    chunks.append(page_text)
+                    if page_text.strip():
+                        chunks.append(page_text)
                 text = "\n".join(chunks)
         else:
             text = ""
@@ -193,26 +140,39 @@ def extract_text_from_upload(file_storage) -> str:
 
     return text.strip()
 
-
 # ---------- Helper: call OpenAI and get report HTML ----------
-
 def generate_report_html(cv_text: str) -> str:
     if not cv_text or not cv_text.strip():
         return "<div class='section'><h2>Error</h2><p>No CV text provided.</p></div>"
 
     try:
         app.logger.info("Calling OpenAI for report generation...")
+
         response = client.chat.completions.create(
-            model="gpt-4.1-mini",
+            model=os.environ.get("OPENAI_MODEL", "gpt-4.1-mini"),
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": build_user_prompt(cv_text)},
             ],
             temperature=0.3,
-            max_tokens=2500,
+            max_tokens=3200,
         )
+
         app.logger.info("OpenAI call succeeded.")
-        return response.choices[0].message.content
+        html = response.choices[0].message.content or ""
+
+        # Safety: if model returns non-HTML, wrap it minimally
+        if "<div" not in html or "SECTION A" not in html:
+            return (
+                "<div class='section'>"
+                "<h2>SECTION A — Candidate Overview</h2>"
+                "<p>We generated your report, but formatting was unexpected. Here is the content:</p>"
+                f"<p>{html}</p>"
+                "</div>"
+            )
+
+        return html
+
     except Exception as e:
         app.logger.error(f"OpenAI API error: {e}")
         return """
@@ -229,14 +189,8 @@ def generate_report_html(cv_text: str) -> str:
         </div>
         """
 
-
 # ---------- Helper: generate referral code ----------
-
 def generate_referral_code(email: str) -> str:
-    """
-    Generate a short referral code based on the user's email + random digits.
-    Example: 'CW4821'
-    """
     email = (email or "").strip()
     if not email:
         prefix = "CC"
@@ -248,9 +202,7 @@ def generate_referral_code(email: str) -> str:
     digits = "".join(secrets.choice(string.digits) for _ in range(4))
     return prefix + digits
 
-
 # ---------- Helper: store email in CSV mailing list ----------
-
 def save_email_to_list(email: str) -> None:
     email = (email or "").strip().lower()
     if not email:
@@ -263,16 +215,8 @@ def save_email_to_list(email: str) -> None:
             writer.writerow(["email", "timestamp_utc"])
         writer.writerow([email, datetime.utcnow().isoformat()])
 
-
 # ---------- Helper: sync a single email to primary Google Sheet ----------
-
 def sync_email_to_sheet(email: str) -> None:
-    """
-    Sends ONE email record to your primary Google Sheet with no duplicates.
-    Sheet:
-      - File name: EMAIL LISTS
-      - First tab: sheet1 (assumed to have 'email' header)
-    """
     email = (email or "").strip().lower()
     if not email:
         return
@@ -303,7 +247,7 @@ def sync_email_to_sheet(email: str) -> None:
     client_gs = gspread.authorize(creds)
 
     SHEET_NAME = "EMAIL LISTS"
-    sheet = client_gs.open(SHEET_NAME).sheet1  # first tab
+    sheet = client_gs.open(SHEET_NAME).sheet1
 
     existing = set()
     records = sheet.get_all_records()
@@ -319,14 +263,8 @@ def sync_email_to_sheet(email: str) -> None:
     else:
         app.logger.info(f"Email {email} already in primary Google Sheet; skipping.")
 
-
 # ---------- Helper: sync a single email to V1 Feedback Results / User List ----------
-
 def sync_email_to_feedback_sheet(email: str) -> None:
-    """
-    Sends ONE email record to the 'V1 Feedback Results' sheet, 'User List' tab,
-    with no duplicates (based on the 'email' column).
-    """
     email = (email or "").strip().lower()
     if not email:
         return
@@ -374,26 +312,13 @@ def sync_email_to_feedback_sheet(email: str) -> None:
     else:
         app.logger.info(f"Email {email} already in feedback Google Sheet; skipping.")
 
-
 # ---------- Helper: send report email via Resend API ----------
-
 def send_report_email(
     recipient_email: str,
     html_report: str,
     referral_code: str,
     feedback_form_url: str,
 ) -> None:
-    """
-    Send the generated report to the user via email using Resend API.
-
-    Order:
-    1) Beta thank-you + report-at-bottom notice
-    2) Feedback + Lifetime Membership draw CTA
-    3) Lifetime Membership & referral explanation (+ keep-it-free line)
-    4) Share link + referral points
-    5) Single strong AI prompt (interview simulator)
-    6) Full CareerCompass report at the bottom
-    """
     recipient_email = (recipient_email or "").strip()
     if not recipient_email:
         app.logger.info("No recipient email provided – skipping email send.")
@@ -410,9 +335,7 @@ def send_report_email(
     )
 
     subject = "Your CareerCompass report + Lifetime Membership draw"
-
     feedback_form_url = (feedback_form_url or "").strip()
-    # Change this to your actual landing page URL if needed
     share_url = "https://career-compass.uk"
 
     text_body = (
@@ -425,13 +348,10 @@ def send_report_email(
     )
 
     html_parts = []
-
-    # Wrapper start
     html_parts.append(
         "<div style='font-family: Arial, sans-serif; max-width: 720px; margin: 0 auto;'>"
     )
 
-    # 1) Greeting + report notice + why feedback matters for them
     html_parts.append(
         """
         <p style="font-size:14px; line-height:1.6;">
@@ -448,7 +368,6 @@ def send_report_email(
         """
     )
 
-    # 2) Monthly prizes + feedback form CTA
     html_parts.append(
         """
         <h3 style="font-size:16px; margin:16px 0 6px;">🎁 Monthly prizes</h3>
@@ -472,11 +391,8 @@ def send_report_email(
             """
         )
 
-    html_parts.append(
-        "<hr style='margin:20px 0; border:none; border-top:1px solid #dddddd;'>"
-    )
+    html_parts.append("<hr style='margin:20px 0; border:none; border-top:1px solid #dddddd;'>")
 
-    # 3) Lifetime Membership & referral explanation + keep-it-free line
     html_parts.append(
         f"""
         <h3 style="font-size:16px; margin:0 0 8px;">Your Lifetime Membership & referral code</h3>
@@ -502,19 +418,16 @@ def send_report_email(
         """
     )
 
-    # 4) Share link
     html_parts.append(
         f"""
         <p style="font-size:14px; line-height:1.6;">
           If you want to share CareerCompass directly, you can send this link to a friend 👇<br>
           <a href="{share_url}" style="color:#0957D0;">{share_url}</a>
         </p>
-
         <hr style="margin:20px 0; border:none; border-top:1px solid #dddddd;">
         """
     )
 
-    # 5) Single strong AI prompt (interview simulator)
     html_parts.append(
         """
         <h3 style="font-size:16px; margin:0 0 8px;">✨ Bonus: Interview simulator prompt</h3>
@@ -526,17 +439,13 @@ def send_report_email(
 Here is my personalised career report from CareerCompass. Act as an interviewer for one of the roles you recommended. Ask me realistic interview questions one at a time. After each answer, give me honest but encouraging feedback and a stronger example answer based on my background.
           </code>
         </p>
-
         <hr style="margin:24px 0; border:none; border-top:1px solid #dddddd;">
-
         <h2 style="font-size:18px; margin-bottom:12px;">Your full CareerCompass report</h2>
         """
     )
 
-    # 6) Append actual report
     html_parts.append(html_report)
 
-    # Sign-off after report
     html_parts.append(
         """
         <p style="font-size:14px; line-height:1.6; margin-top:24px;">
@@ -577,17 +486,12 @@ Here is my personalised career report from CareerCompass. Act as an interviewer 
                 f"status={resp.status_code}, body={resp.text}"
             )
     except requests.RequestException as e:
-        app.logger.error(
-            f"Network error sending email via Resend to {recipient_email}: {e}"
-        )
-
+        app.logger.error(f"Network error sending email via Resend to {recipient_email}: {e}")
 
 # ---------- Routes ----------
-
 @app.route("/", methods=["GET"])
 def index():
     return render_template("index.html")
-
 
 @app.route("/generate", methods=["POST"])
 def generate_report():
@@ -602,16 +506,11 @@ def generate_report():
         flash("Please paste your CV or upload a valid file.", "error")
         return redirect(url_for("index"))
 
-    # 1) Get HTML report
     report_html = generate_report_html(combined_cv)
 
-    # 2) Generate referral code
     referral_code = generate_referral_code(email) if email else ""
-
-    # 3) Read feedback form URL from env
     feedback_form_url = os.environ.get("FEEDBACK_FORM_URL", "")
 
-    # 4) Save email + syncs + send email (best effort)
     try:
         save_email_to_list(email)
     except Exception as e:
@@ -632,7 +531,6 @@ def generate_report():
     except Exception as e:
         app.logger.error(f"Failed to send report email: {e}")
 
-    # 5) Render on-screen HTML report page (with feedback link too)
     return render_template(
         "report.html",
         email=email,
@@ -642,7 +540,6 @@ def generate_report():
         feedback_form_url=feedback_form_url,
     )
 
-
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))  # Railway overrides this
+    port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port)
