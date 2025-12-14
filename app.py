@@ -8,78 +8,80 @@ from datetime import datetime
 from pathlib import Path
 
 import requests
-from flask import (
-    Flask,
-    render_template,
-    request,
-    redirect,
-    url_for,
-    flash,
-)
+from flask import Flask, render_template, request, redirect, url_for, flash
 from openai import OpenAI
 from docx import Document
 from PyPDF2 import PdfReader
 
-# ---- Global network timeout baseline ----
 socket.setdefaulttimeout(5)
 
-# ---------- Flask setup ----------
 BASE_DIR = Path(__file__).resolve().parent
-
 app = Flask(__name__, template_folder=str(BASE_DIR / "templates"))
 app.secret_key = os.environ.get("SECRET_KEY", "change-me-in-production")
 
 UPLOAD_FOLDER = BASE_DIR / "uploads"
 EMAIL_LIST_FILE = BASE_DIR / "email_list.csv"
-
 UPLOAD_FOLDER.mkdir(exist_ok=True)
 app.config["UPLOAD_FOLDER"] = str(UPLOAD_FOLDER)
 
-# ---------- OpenAI client ----------
 client = OpenAI(timeout=30)  # uses OPENAI_API_KEY from env
 
 
 # ============================================================
-# ✅ NEW PROMPT (Matches the "final spec" from this chat)
+# ✅ NEW SYSTEM PROMPT (matches final spec + your new notes)
 # ============================================================
 SYSTEM_PROMPT = """
-You are CareerCompass — a career analyst that turns a user’s CV into a practical, trustworthy career report.
+You are CareerCompass — an AI career coach/analyst that produces school-safe, user-friendly career reports.
 
-You are NOT a motivational speaker.
-You must be realistic, specific, and useful.
+THIS IS CRITICAL:
+Write directly TO the user in second-person ("you", "your").
+Do NOT write about them in third-person ("Charlie is...").
 
-CRITICAL TRUST RULES (NO HALLUCINATION):
-- Do NOT invent employers, job titles, degrees, grades, dates, companies, or achievements.
-- If a date is unclear, do NOT guess it. Use “recent” or omit dates entirely.
-- If a detail is missing, say so briefly and continue with grounded assumptions.
+TRUST / SAFETY RULES (NO HALLUCINATION):
+- Do NOT invent employers, job titles, degrees, grades, dates, companies, salaries, or achievements.
+- If dates/grades are unclear: do NOT guess. Say “recent” or omit.
+- Never estimate what the user was paid in previous jobs. It's irrelevant and often wrong.
+- Only give salary ranges for target roles and progression, not past roles.
 
-STAGE AWARENESS (choose one):
+DO NOT REHASH THE CV:
+- Do not copy the CV back to them or list everything they wrote.
+- Briefly acknowledge key signals, then focus on INSIGHT: what it means, what it unlocks, what’s missing, what to do next.
+
+STAGE AWARENESS (choose one primary stage):
 A) Pre-16 (GCSE)
 B) Post-16 (A-levels/college/apprenticeship decisions)
 C) University student
 D) Graduate / early-career (0–3 years)
 E) Mid-career (3–10 years)
 F) Career changer / returner
-G) Unknown
+G) Unknown (not enough info)
 
-You must state the detected stage in Section 1.
+You must state the detected stage in Candidate Snapshot.
+
+NARRATIVE / “STORY” RULE:
+The report must flow like a journey:
+- Past signals (what your background suggests)
+- Present reality (where you are now)
+- Next 0–3 months (what to do first)
+- Next 1–3 years (likely progression)
+- Longer-term earning ceiling levers (what increases future salary)
+
+READABILITY / SPACING RULES:
+- Keep paragraphs to 1–3 sentences max.
+- Use micro-headings within subsections via short <p><strong>Label:</strong> ...</p>
+- Use bullets for lists (no long blocks).
+- Insert natural spacing by splitting ideas into separate <p> blocks.
+- Avoid “wall of text”.
+
+SCORES MUST USE PERCENT FORMAT:
+- Any score out of 100 must be written like “72%” (not “72/100”, not “72”).
+- In Best-Fit Roles, provide 3–5 roles/pathways with:
+  Technical: XX% | Experience: XX% | Communication: XX% | Overall: XX%
 
 EVIDENCE NOTES (light-touch, non-academic):
-Only include “Evidence note” lines where you mention:
-- salary ranges
-- competitiveness/hiring reality
-- progression timelines
-- skill ROI
-Format exactly like:
-<p><strong>Evidence note:</strong> ...</p>
+Only when referencing salary ranges, hiring competitiveness, progression timelines, or skill ROI:
+<p><strong>Evidence note:</strong> Based on reputable public sources such as ONS/HESA/Prospects/CIPD and aggregated job market ranges (Indeed/Reed/Glassdoor).</p>
 No links. No academic citations. No “Sources & Methodology” section.
-
-READABILITY RULE (locked):
-Inside EVERY subsection:
-1) Detailed explanation (short paragraphs)
-2) Breakdown / bullets / scores / ranges
-3) TL;DR at the END:
-<p><strong>TL;DR:</strong> ...</p>
 
 OUTPUT FORMAT (STRICT):
 Return HTML ONLY.
@@ -96,68 +98,57 @@ You MUST output exactly three top-level sections, each wrapped in <div class="se
 Within each SECTION, use <h3> subsections with these exact titles and emojis:
 
 SECTION A — Candidate Overview
-- <h3>👤 Candidate Snapshot</h3>
-- <h3>🧭 Career Direction</h3>
-- <h3>📊 Comparison to Others</h3>
-- <h3>🎯 Best-Fit Roles / Pathways</h3>
-- <h3>🧠 Skills & Strengths</h3>
-- <h3>🚧 Gaps Holding You Back</h3>
+- 👤 Candidate Snapshot
+- 🧭 Career Direction
+- 📊 Comparison to Others
+- 🎯 Best-Fit Roles / Pathways
+- 🧠 Skills & Strengths
+- 🚧 Gaps Holding You Back
 
 SECTION B — Candidate → Hired
-- <h3>💰 Salary & Money Outlook</h3>
-- <h3>📈 High-ROI Skills (Career + Life)</h3>
-- <h3>🗓️ 90-Day Plan</h3>
-- <h3>✅ Recommended Next Decisions</h3>
-- <h3>📌 Diagnostic Scores</h3>
-- <h3>🧾 Final Direction</h3>
-- <h3>🧾 Summary — Your Career Right Now</h3>
+- 💰 Salary & Money Outlook
+- 📈 High-ROI Skills (Career + Life)
+- 🗓️ 90-Day Plan
+- ✅ Recommended Next Decisions
+- 📌 Diagnostic Scores
+- 🧾 Final Direction
+- 🧾 Summary — Your Career Right Now
 
 SECTION C — Job Search Resources
-- <h3>🧾 Professional Summary (CV & LinkedIn Ready)</h3>
-- <h3>🧾 Cover Letter Opening Paragraph</h3>
-- <h3>✅ Job Search Tips</h3>
+- 🧾 Professional Summary (CV & LinkedIn Ready)
+- 🧾 Cover Letter Opening Paragraph
+- ✅ Job Search Tips
 
-SCORING:
-In “Best-Fit Roles / Pathways”, include 3–5 roles/pathways with simple competitiveness scores:
-- Technical (0–100)
-- Experience (0–100)
-- Communication (0–100)
-- Overall (0–100)
-
-In “Diagnostic Scores”, score 0–100:
-- Clarity
-- Skills readiness
-- Evidence/credibility
-- Market fit
-- Path readiness
-Then 1 sentence explaining biggest lever.
+SUBSECTION INTERNAL FLOW (LOCKED):
+Inside EVERY <h3> subsection, use:
+1) Detailed explanation (short paragraphs, insight-focused)
+2) Breakdown bullets/scores/ranges
+3) Evidence note (only when relevant)
+4) TL;DR at the END:
+<p><strong>TL;DR:</strong> ...</p>
 
 UK FIRST:
-Default to UK salary ranges unless location clearly not UK.
+Default to UK assumptions unless location clearly not UK.
 Use realistic ranges, not best-case.
-
-Remember: this should feel more valuable than “ask ChatGPT”, because it is structured, stage-aware, quantified, and decision-focused.
 """.strip()
 
 
 def build_user_prompt(cv_text: str) -> str:
-    trimmed = (cv_text or "")[:8500]
+    trimmed = (cv_text or "")[:9000]
     return f"""
-You will be given CV text. Extract what is there, do not guess dates or fabricate details.
+Analyse the following CV text and produce the report in the exact structure required.
+
+Important:
+- Second-person voice only ("you").
+- Do not repeat the CV back. Extract signals and give insights.
+- Do not guess dates/grades/salaries. Never estimate past pay.
+- Scores must be shown as percentages (e.g., 72%).
+- Maintain strong readability: short paragraphs, clear labels, bullets.
 
 CV TEXT:
 \"\"\"
 {trimmed}
 \"\"\"
-
-Now produce the report in the EXACT HTML structure required in the system prompt.
-
-Important:
-- Use the exact SECTION A/B/C headings.
-- Use the exact <h3> subsection headings (with emojis).
-- In every subsection: detail first, then bullets/scores/ranges, then TL;DR last.
-- Include Evidence note lines only when you mention salary, demand, progression timelines, or ROI.
-- If dates/grades are unclear: do NOT guess them.
 """.strip()
 
 
@@ -203,7 +194,7 @@ def extract_text_from_upload(file_storage) -> str:
 
 
 # ============================================================
-# ✅ Structure validation + repair pass
+# Structure validation + repair pass
 # ============================================================
 REQUIRED_H2 = [
     "SECTION A — Candidate Overview",
@@ -244,8 +235,10 @@ def report_has_required_structure(html: str) -> bool:
         if h3 not in html:
             return False
 
-    # ensure at least some TL;DR markers
+    # enforce TL;DR marker and percent sign usage somewhere
     if "<strong>TL;DR:</strong>" not in html:
+        return False
+    if "%" not in html:
         return False
 
     return True
@@ -253,24 +246,28 @@ def report_has_required_structure(html: str) -> bool:
 
 def repair_report_html(cv_text: str, bad_html: str) -> str:
     """
-    Second pass: strictly reformat into required structure, without adding new facts.
+    Second pass: rewrite into the exact required structure without adding facts.
+    Also fixes third-person voice and % formatting if needed.
     """
     prompt = f"""
-You produced HTML but the structure was wrong.
+Your previous output did not meet the required format.
 
-Task:
-- Rewrite into the EXACT required structure and headings.
-- Do NOT add new facts. Only use what is already in the CV text and the provided draft.
-- Remove any guessed dates/grades/claims that are not clearly supported.
+Fix it:
+- Second-person voice only.
+- Exact SECTION A/B/C + exact <h3> headings.
+- Scores must be percentages (e.g., 72%).
+- Remove any guessed dates/grades/salaries or invented details.
+- Improve readability: short <p> blocks, labels, bullets.
+- Do NOT rehash the CV; focus on insights.
 
 CV TEXT:
 \"\"\"
-{(cv_text or "")[:8500]}
+{(cv_text or "")[:9000]}
 \"\"\"
 
-DRAFT OUTPUT (may be wrong):
+DRAFT OUTPUT:
 \"\"\"
-{(bad_html or "")[:8500]}
+{(bad_html or "")[:9000]}
 \"\"\"
 
 Now output corrected HTML only.
@@ -283,7 +280,7 @@ Now output corrected HTML only.
             {"role": "user", "content": prompt},
         ],
         temperature=0.2,
-        max_tokens=3600,
+        max_tokens=3800,
     )
     return (response.choices[0].message.content or "").strip()
 
@@ -295,8 +292,6 @@ def generate_report_html(cv_text: str) -> str:
     model = os.environ.get("OPENAI_MODEL", "gpt-4.1-mini")
 
     try:
-        app.logger.info("Calling OpenAI for report generation...")
-
         response = client.chat.completions.create(
             model=model,
             messages=[
@@ -304,18 +299,16 @@ def generate_report_html(cv_text: str) -> str:
                 {"role": "user", "content": build_user_prompt(cv_text)},
             ],
             temperature=0.25,
-            max_tokens=3600,
+            max_tokens=3800,
         )
 
         html = (response.choices[0].message.content or "").strip()
 
-        # ✅ If formatting drifted, repair it automatically
         if not report_has_required_structure(html):
             app.logger.warning("Report structure invalid — running repair pass.")
             html2 = repair_report_html(cv_text, html)
             if report_has_required_structure(html2):
                 return html2
-            # fallback: return repaired anyway, better than nothing
             return html2 or html
 
         return html
@@ -325,14 +318,13 @@ def generate_report_html(cv_text: str) -> str:
         return """
         <div class='section'>
           <h2>Temporary issue generating your report</h2>
-          <p>We ran into a problem while generating your CareerCompass report.</p>
-          <p>Please try again in a moment.</p>
+          <p>We ran into a problem while generating your CareerCompass report. Please try again.</p>
         </div>
         """
 
 
 # ============================================================
-# Referral + email list + sheets + resend (unchanged)
+# Referral + email list + sheets + resend (kept as your existing)
 # ============================================================
 def generate_referral_code(email: str) -> str:
     email = (email or "").strip()
@@ -342,6 +334,7 @@ def generate_referral_code(email: str) -> str:
         local_part = email.split("@")[0]
         letters = [ch for ch in local_part if ch.isalpha()]
         prefix = "".join(letters[:2]).upper() or "CC"
+
     digits = "".join(secrets.choice(string.digits) for _ in range(4))
     return prefix + digits
 
@@ -350,6 +343,7 @@ def save_email_to_list(email: str) -> None:
     email = (email or "").strip().lower()
     if not email:
         return
+
     file_exists = EMAIL_LIST_FILE.exists()
     with EMAIL_LIST_FILE.open(mode="a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -471,22 +465,14 @@ def send_report_email(recipient_email: str, html_report: str, referral_code: str
     feedback_form_url = (feedback_form_url or "").strip()
     share_url = "https://career-compass.uk"
 
-    text_body = (
-        "Hi,\n\n"
-        "Thanks for trying CareerCompass.\n\n"
-        "Your report is included below.\n\n"
-        "Best,\nCareerCompass"
-    )
-
     html_parts = []
     html_parts.append("<div style='font-family: Arial, sans-serif; max-width: 720px; margin: 0 auto;'>")
-
     html_parts.append(
         """
         <p style="font-size:14px; line-height:1.6;">
           Hi,<br><br>
           Thanks for trying the CareerCompass beta. 🙌<br>
-          You’ll find your full CareerCompass report at the bottom of this email 👇
+          Your full CareerCompass report is below 👇
         </p>
         """
     )
@@ -521,7 +507,7 @@ def send_report_email(recipient_email: str, html_report: str, referral_code: str
         "to": [recipient_email],
         "subject": subject,
         "html": "".join(html_parts),
-        "text": text_body,
+        "text": "Your CareerCompass report is included in this email.",
     }
 
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
@@ -562,7 +548,7 @@ def generate_report():
     referral_code = generate_referral_code(email) if email else ""
     feedback_form_url = os.environ.get("FEEDBACK_FORM_URL", "")
 
-    # best-effort persistence + email
+    # best effort storage + email
     try:
         save_email_to_list(email)
     except Exception as e:
