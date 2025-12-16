@@ -5,7 +5,6 @@
   <title>CareerCompass – Your Career Report</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- Favicon -->
   <link rel="icon" href="{{ url_for('static', filename='favicon.png') }}?v=2" type="image/png">
 
   <style>
@@ -19,33 +18,24 @@
       --border-subtle: #e5e7eb;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
       padding: 24px;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background:
-        radial-gradient(circle at top, rgba(3, 70, 148, 0.05), transparent 55%),
-        var(--bg-soft);
+      background: radial-gradient(circle at top, rgba(3, 70, 148, 0.05), transparent 55%), var(--bg-soft);
       color: var(--text-main);
-      line-height: 1.6;
+      line-height: 1.65;
     }
 
-    .page {
-      max-width: 1050px;
-      margin: 0 auto;
-    }
+    .page { max-width: 1050px; margin: 0 auto; }
 
     .card {
       background: #ffffff;
       border-radius: 18px;
       border: 1px solid rgba(15, 23, 42, 0.08);
-      box-shadow:
-        0 18px 40px rgba(15, 23, 42, 0.08),
-        0 0 0 1px rgba(255, 255, 255, 0.9);
+      box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(255, 255, 255, 0.9);
       overflow: hidden;
     }
 
@@ -79,23 +69,13 @@
       color: #d1d5db;
     }
 
-    .header-meta strong {
-      color: #f9fafb;
-    }
-
-    .header-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      align-items: center;
-    }
+    .header-meta strong { color: #f9fafb; }
 
     .body {
       padding: 20px 22px 22px;
       background: #ffffff;
     }
 
-    /* Top actions: back button + email note + feedback link */
     .top-actions {
       display: flex;
       flex-wrap: wrap;
@@ -118,22 +98,15 @@
       font-weight: 600;
       text-decoration: none;
       cursor: pointer;
-      transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease,
-        transform 0.12s ease, box-shadow 0.12s ease;
+      transition: background 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease;
       box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
       white-space: nowrap;
     }
 
     .btn-back:hover {
       background: var(--chelsea-blue-soft);
-      color: var(--chelsea-blue-dark);
-      border-color: rgba(3, 70, 148, 0.6);
       transform: translateY(-1px);
       box-shadow: 0 8px 18px rgba(15, 23, 42, 0.15);
-    }
-
-    .btn-back span.icon {
-      font-size: 14px;
     }
 
     .email-note {
@@ -142,22 +115,29 @@
       margin: 0;
     }
 
-    .email-note strong {
-      color: var(--text-main);
-    }
+    .email-note strong { color: var(--text-main); }
 
+    /* Pills container */
     .pill-nav {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      margin-bottom: 18px;
+      margin: 14px 0 18px;
+      position: sticky;
+      top: 10px;
+      z-index: 5;
+      background: rgba(243, 244, 246, 0.75);
+      padding: 10px;
+      border-radius: 14px;
+      border: 1px solid rgba(15, 23, 42, 0.06);
+      backdrop-filter: blur(8px);
     }
 
     .pill-nav button {
       border-radius: 999px;
       border: 1px solid rgba(3, 70, 148, 0.15);
       padding: 6px 12px;
-      background: #f9fafb;
+      background: #ffffff;
       font-size: 11px;
       color: var(--text-muted);
       cursor: pointer;
@@ -172,6 +152,7 @@
       height: 6px;
       border-radius: 999px;
       background: var(--chelsea-blue);
+      flex: 0 0 auto;
     }
 
     .pill-nav button:hover {
@@ -180,12 +161,11 @@
       border-color: rgba(3, 70, 148, 0.4);
     }
 
-    .report-content {
-      margin-top: 6px;
-    }
+    .report-content { margin-top: 6px; }
 
+    /* One section = one main heading block */
     .report-content .section {
-      margin-bottom: 24px;
+      margin-bottom: 26px;
       padding-bottom: 18px;
       border-bottom: 1px solid var(--border-subtle);
     }
@@ -198,33 +178,32 @@
 
     .report-content h2 {
       font-size: 18px;
-      margin: 0 0 8px;
+      margin: 0 0 10px;
       color: var(--chelsea-blue-dark);
       letter-spacing: 0.01em;
       border-bottom: 2px solid var(--chelsea-blue-soft);
-      padding-bottom: 4px;
+      padding-bottom: 6px;
+      scroll-margin-top: 90px;
     }
 
     .report-content h3 {
-      font-size: 14px;
-      margin: 10px 0 6px;
+      font-size: 13.5px;
+      margin: 12px 0 6px;
       color: #111827;
     }
 
     .report-content p {
-      margin: 4px 0 6px;
+      margin: 7px 0;
       font-size: 13px;
     }
 
     .report-content ul {
-      margin: 4px 0 6px 16px;
+      margin: 8px 0 10px 18px;
       padding: 0;
       font-size: 13px;
     }
 
-    .report-content li {
-      margin-bottom: 3px;
-    }
+    .report-content li { margin-bottom: 5px; }
 
     .footer-note {
       margin-top: 14px;
@@ -234,23 +213,10 @@
     }
 
     @media (max-width: 720px) {
-      body {
-        padding: 12px;
-      }
-      .header {
-        align-items: flex-start;
-      }
-      .header-meta {
-        text-align: left;
-      }
-      .header-actions {
-        width: 100%;
-        justify-content: flex-start;
-      }
-      .top-actions {
-        flex-direction: column;
-        align-items: flex-start;
-      }
+      body { padding: 12px; }
+      .header-meta { text-align: left; }
+      .top-actions { flex-direction: column; align-items: flex-start; }
+      .pill-nav { top: 6px; }
     }
   </style>
 </head>
@@ -263,18 +229,15 @@
           <p>Personalised career analysis based on your CV.</p>
         </div>
 
-        <div class="header-actions">
-          <div class="header-meta">
-            {% if email %}
-              <div><strong>Email:</strong> {{ email }}</div>
-            {% endif %}
-            <div>Generated by CareerCompass</div>
-          </div>
+        <div class="header-meta">
+          {% if email %}
+            <div><strong>Email:</strong> {{ email }}</div>
+          {% endif %}
+          <div>Generated by CareerCompass</div>
         </div>
       </header>
 
       <main class="body">
-        <!-- Back to form + email note + feedback link -->
         <div class="top-actions">
           <a href="{{ url_for('index') }}" class="btn-back">
             <span class="icon">←</span>
@@ -284,37 +247,23 @@
           <div>
             {% if email %}
               <p class="email-note">
-                A copy of this report has been emailed to <strong>{{ email }}</strong>.  
+                A copy of this report has been emailed to <strong>{{ email }}</strong>.
                 If you don’t see it, check your spam/junk folder.
               </p>
             {% endif %}
 
             {% if feedback_form_url %}
               <p class="email-note">
-                🎁 30s feedback = chance to win Lifetime Membership – 
+                🎁 30s feedback = chance to win Lifetime Membership –
                 <a href="{{ feedback_form_url }}" target="_blank">open feedback form</a>.
               </p>
             {% endif %}
           </div>
         </div>
 
-        <!-- Pill navigation -->
-        <nav class="pill-nav">
-          <button type="button" data-target="section-a">
-            <span class="dot"></span>
-            SECTION A – Overview
-          </button>
-          <button type="button" data-target="section-b">
-            <span class="dot"></span>
-            SECTION B – Candidate → Hired
-          </button>
-          <button type="button" data-target="section-c">
-            <span class="dot"></span>
-            SECTION C – Resources
-          </button>
-        </nav>
+        <!-- Pills generated dynamically from report headings -->
+        <nav class="pill-nav" id="pill-nav"></nav>
 
-        <!-- Report content injected from OpenAI -->
         <div class="report-content" id="report-root">
           {{ report_html | safe }}
         </div>
@@ -327,37 +276,57 @@
   </div>
 
   <script>
-    // Smooth scroll on pill click
-    document.querySelectorAll(".pill-nav button").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const targetKey = btn.getAttribute("data-target");
+    function slugify(text) {
+      return (text || "")
+        .toLowerCase()
+        .replace(/[^\w\s-]/g, "")
+        .trim()
+        .replace(/\s+/g, "-")
+        .slice(0, 60);
+    }
 
-        const allSections = document.querySelectorAll(".report-content .section");
-        let targetSection = null;
+    function buildPillsFromH2() {
+      const nav = document.getElementById("pill-nav");
+      const root = document.getElementById("report-root");
+      if (!nav || !root) return;
 
-        allSections.forEach((section) => {
-          const heading = section.querySelector("h2, h3");
-          if (!heading) return;
-          const text = (heading.textContent || "").toUpperCase();
+      const sections = Array.from(root.querySelectorAll(".section"));
+      const h2s = sections
+        .map((sec) => ({ sec, h2: sec.querySelector("h2") }))
+        .filter((x) => x.h2);
 
-          if (targetKey === "section-a" && text.includes("SECTION A")) {
-            targetSection = section;
-          }
-          if (targetKey === "section-b" && text.includes("SECTION B")) {
-            targetSection = section;
-          }
-          if (targetKey === "section-c" && text.includes("SECTION C")) {
-            targetSection = section;
-          }
+      nav.innerHTML = "";
+
+      h2s.forEach(({ sec, h2 }, idx) => {
+        // Ensure every section has a stable id
+        if (!sec.id) {
+          const base = slugify(h2.textContent) || `section-${idx + 1}`;
+          sec.id = base;
+        }
+
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.innerHTML = `<span class="dot"></span>${h2.textContent}`;
+        btn.addEventListener("click", () => {
+          sec.scrollIntoView({ behavior: "smooth", block: "start" });
         });
 
-        if (targetSection) {
-          targetSection.scrollIntoView({ behavior: "smooth", block: "start" });
-        } else {
-          document.getElementById("report-root").scrollIntoView({ behavior: "smooth" });
-        }
+        nav.appendChild(btn);
       });
-    });
+
+      // If no h2 found, show fallback
+      if (h2s.length === 0) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.innerHTML = `<span class="dot"></span>Top`;
+        btn.addEventListener("click", () => {
+          root.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+        nav.appendChild(btn);
+      }
+    }
+
+    buildPillsFromH2();
   </script>
 </body>
 </html>

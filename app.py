@@ -8,142 +8,119 @@ from datetime import datetime
 from pathlib import Path
 
 import requests
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    flash,
+)
 from openai import OpenAI
 from docx import Document
 from PyPDF2 import PdfReader
 
+# ---- Global network timeout baseline ----
 socket.setdefaulttimeout(5)
 
+# ---------- Flask setup ----------
 BASE_DIR = Path(__file__).resolve().parent
+
 app = Flask(__name__, template_folder=str(BASE_DIR / "templates"))
 app.secret_key = os.environ.get("SECRET_KEY", "change-me-in-production")
 
+# Folders for uploads and simple email list
 UPLOAD_FOLDER = BASE_DIR / "uploads"
 EMAIL_LIST_FILE = BASE_DIR / "email_list.csv"
+
 UPLOAD_FOLDER.mkdir(exist_ok=True)
 app.config["UPLOAD_FOLDER"] = str(UPLOAD_FOLDER)
 
+# ---------- OpenAI client ----------
 client = OpenAI(timeout=30)  # uses OPENAI_API_KEY from env
 
 
 # ============================================================
-# ✅ NEW SYSTEM PROMPT (matches final spec + your new notes)
+# ✅ CareerCompass Prompt (Final: 13-section report)
 # ============================================================
 SYSTEM_PROMPT = """
-You are CareerCompass — an AI career coach/analyst that produces school-safe, user-friendly career reports.
+You are CareerCompass, an AI career analyst.
 
-THIS IS CRITICAL:
-Write directly TO the user in second-person ("you", "your").
-Do NOT write about them in third-person ("Charlie is...").
+Write directly TO the user in second-person (“you”, “your”).
+Do NOT write about them in third-person.
 
-TRUST / SAFETY RULES (NO HALLUCINATION):
-- Do NOT invent employers, job titles, degrees, grades, dates, companies, salaries, or achievements.
-- If dates/grades are unclear: do NOT guess. Say “recent” or omit.
-- Never estimate what the user was paid in previous jobs. It's irrelevant and often wrong.
-- Only give salary ranges for target roles and progression, not past roles.
+DO NOT REHASH THEIR CV:
+- Do not list their education/work history back to them like a CV rewrite.
+- Briefly acknowledge key signals, then give insights: what it means, what it unlocks, what’s missing, what to do next.
 
-DO NOT REHASH THE CV:
-- Do not copy the CV back to them or list everything they wrote.
-- Briefly acknowledge key signals, then focus on INSIGHT: what it means, what it unlocks, what’s missing, what to do next.
+NO HALLUCINATIONS / TRUST RULES:
+- Do NOT invent employers, job titles, degrees, grades, dates, companies, or achievements.
+- If a date/grade is unclear, do NOT guess. Use “recent” or omit.
+- NEVER estimate what they were paid in previous jobs (irrelevant and often wrong).
+- Salary ranges are only for future target roles and progression.
 
-STAGE AWARENESS (choose one primary stage):
-A) Pre-16 (GCSE)
-B) Post-16 (A-levels/college/apprenticeship decisions)
-C) University student
-D) Graduate / early-career (0–3 years)
-E) Mid-career (3–10 years)
-F) Career changer / returner
-G) Unknown (not enough info)
-
-You must state the detected stage in Candidate Snapshot.
-
-NARRATIVE / “STORY” RULE:
-The report must flow like a journey:
-- Past signals (what your background suggests)
-- Present reality (where you are now)
-- Next 0–3 months (what to do first)
-- Next 1–3 years (likely progression)
-- Longer-term earning ceiling levers (what increases future salary)
-
-READABILITY / SPACING RULES:
-- Keep paragraphs to 1–3 sentences max.
-- Use micro-headings within subsections via short <p><strong>Label:</strong> ...</p>
-- Use bullets for lists (no long blocks).
-- Insert natural spacing by splitting ideas into separate <p> blocks.
-- Avoid “wall of text”.
-
-SCORES MUST USE PERCENT FORMAT:
-- Any score out of 100 must be written like “72%” (not “72/100”, not “72”).
-- In Best-Fit Roles, provide 3–5 roles/pathways with:
-  Technical: XX% | Experience: XX% | Communication: XX% | Overall: XX%
-
-EVIDENCE NOTES (light-touch, non-academic):
-Only when referencing salary ranges, hiring competitiveness, progression timelines, or skill ROI:
-<p><strong>Evidence note:</strong> Based on reputable public sources such as ONS/HESA/Prospects/CIPD and aggregated job market ranges (Indeed/Reed/Glassdoor).</p>
-No links. No academic citations. No “Sources & Methodology” section.
+STAGE AWARENESS (choose one, state it in Candidate Snapshot):
+Pre-16 (GCSE) / Post-16 / University student / Graduate-early career / Mid-career / Career changer / Unknown.
 
 OUTPUT FORMAT (STRICT):
 Return HTML ONLY.
 Use only: <div>, <h2>, <h3>, <p>, <ul>, <li>, <strong>
-No <html>, <head>, <body>, CSS, scripts.
+Do NOT include <html>, <head>, <body>, CSS, or scripts.
 
-PILL NAV (STRICT):
-You MUST output exactly three top-level sections, each wrapped in <div class="section"> and titled with <h2>:
+STRUCTURE (LOCKED):
+Output exactly these sections IN THIS ORDER.
+Each section must be wrapped as:
+<div class="section"><h2>...</h2>...</div>
 
-1) SECTION A — Candidate Overview
-2) SECTION B — Candidate → Hired
-3) SECTION C — Job Search Resources
+1. <h2>👤 Candidate Snapshot</h2>
+2. <h2>🧭 Career Direction</h2>
+3. <h2>📊 Comparison to Others</h2>
+4. <h2>🎯 Best-Fit Roles / Pathways</h2>
+5. <h2>🧠 Skills & Strengths</h2>
+6. <h2>🚧 Gaps Holding You Back</h2>
+7. <h2>💰 Salary & Money Outlook</h2>
+8. <h2>📈 High-ROI Skills (Career + Life)</h2>
+9. <h2>🗓️ 90-Day Plan</h2>
+10. <h2>✅ Recommended Next Decisions</h2>
+11. <h2>📌 Diagnostic Scores</h2>
+12. <h2>🧾 Final Direction</h2>
+13. <h2>🧾 Summary — Your Career Right Now</h2>
 
-Within each SECTION, use <h3> subsections with these exact titles and emojis:
-
-SECTION A — Candidate Overview
-- 👤 Candidate Snapshot
-- 🧭 Career Direction
-- 📊 Comparison to Others
-- 🎯 Best-Fit Roles / Pathways
-- 🧠 Skills & Strengths
-- 🚧 Gaps Holding You Back
-
-SECTION B — Candidate → Hired
-- 💰 Salary & Money Outlook
-- 📈 High-ROI Skills (Career + Life)
-- 🗓️ 90-Day Plan
-- ✅ Recommended Next Decisions
-- 📌 Diagnostic Scores
-- 🧾 Final Direction
-- 🧾 Summary — Your Career Right Now
-
-SECTION C — Job Search Resources
-- 🧾 Professional Summary (CV & LinkedIn Ready)
-- 🧾 Cover Letter Opening Paragraph
-- ✅ Job Search Tips
-
-SUBSECTION INTERNAL FLOW (LOCKED):
-Inside EVERY <h3> subsection, use:
-1) Detailed explanation (short paragraphs, insight-focused)
+SECTION INTERNAL FLOW (VERY IMPORTANT):
+Inside every section:
+1) Detailed explanation (short paragraphs)
 2) Breakdown bullets/scores/ranges
-3) Evidence note (only when relevant)
-4) TL;DR at the END:
+3) Evidence note ONLY where relevant (salary, demand, progression, ROI):
+<p><strong>Evidence note:</strong> Based on reputable public sources such as ONS/HESA/Prospects/CIPD and aggregated job market ranges (Indeed/Reed/Glassdoor).</p>
+4) TL;DR at the end:
 <p><strong>TL;DR:</strong> ...</p>
 
-UK FIRST:
-Default to UK assumptions unless location clearly not UK.
-Use realistic ranges, not best-case.
+SCORING RULES:
+- Any score must be shown as a percentage like “72%” (not “72/100”, not “72”).
+- In Best-Fit Roles / Pathways, provide 3–5 specific job titles and:
+  Technical: XX% | Experience: XX% | Communication: XX% | Overall: XX%
+
+READABILITY RULES:
+- 1–3 sentences per paragraph.
+- Prefer multiple short <p> blocks over long text.
+- Use bullets heavily.
+- Use <p><strong>Label:</strong> ...</p> lines to create whitespace and scanning cues.
+
+UK FIRST unless location clearly indicates otherwise.
+Be realistic, practical, and school-safe.
 """.strip()
 
 
 def build_user_prompt(cv_text: str) -> str:
     trimmed = (cv_text or "")[:9000]
     return f"""
-Analyse the following CV text and produce the report in the exact structure required.
+Generate the CareerCompass report using the exact HTML structure and order described in the system prompt.
 
 Important:
-- Second-person voice only ("you").
-- Do not repeat the CV back. Extract signals and give insights.
-- Do not guess dates/grades/salaries. Never estimate past pay.
-- Scores must be shown as percentages (e.g., 72%).
-- Maintain strong readability: short paragraphs, clear labels, bullets.
+- Second-person voice only (“you”).
+- Do not rehash the CV; focus on insights and actions.
+- Do not guess dates/grades or estimate past pay.
+- Scores must be percentages.
 
 CV TEXT:
 \"\"\"
@@ -153,7 +130,7 @@ CV TEXT:
 
 
 # ============================================================
-# Upload parsing
+# Extract text from uploaded file
 # ============================================================
 def extract_text_from_upload(file_storage) -> str:
     if not file_storage or file_storage.filename == "":
@@ -162,6 +139,7 @@ def extract_text_from_upload(file_storage) -> str:
     filename = file_storage.filename
     ext = Path(filename).suffix.lower()
 
+    # Avoid collisions in uploads
     temp_path = UPLOAD_FOLDER / f"{secrets.token_hex(8)}_{Path(filename).name}"
     file_storage.save(temp_path)
 
@@ -194,15 +172,9 @@ def extract_text_from_upload(file_storage) -> str:
 
 
 # ============================================================
-# Structure validation + repair pass
+# Report validation + repair
 # ============================================================
 REQUIRED_H2 = [
-    "SECTION A — Candidate Overview",
-    "SECTION B — Candidate → Hired",
-    "SECTION C — Job Search Resources",
-]
-
-REQUIRED_H3 = [
     "👤 Candidate Snapshot",
     "🧭 Career Direction",
     "📊 Comparison to Others",
@@ -216,9 +188,6 @@ REQUIRED_H3 = [
     "📌 Diagnostic Scores",
     "🧾 Final Direction",
     "🧾 Summary — Your Career Right Now",
-    "🧾 Professional Summary (CV & LinkedIn Ready)",
-    "🧾 Cover Letter Opening Paragraph",
-    "✅ Job Search Tips",
 ]
 
 
@@ -226,19 +195,21 @@ def report_has_required_structure(html: str) -> bool:
     if not html:
         return False
 
-    upper = html.upper()
+    # Must contain all required h2 headings
     for h2 in REQUIRED_H2:
-        if h2.upper() not in upper:
+        if h2 not in html:
             return False
 
-    for h3 in REQUIRED_H3:
-        if h3 not in html:
-            return False
-
-    # enforce TL;DR marker and percent sign usage somewhere
+    # Must contain TL;DR marker
     if "<strong>TL;DR:</strong>" not in html:
         return False
+
+    # Must use percentages somewhere (scores)
     if "%" not in html:
+        return False
+
+    # Must have section wrappers
+    if "class=\"section\"" not in html and "class='section'" not in html:
         return False
 
     return True
@@ -246,18 +217,21 @@ def report_has_required_structure(html: str) -> bool:
 
 def repair_report_html(cv_text: str, bad_html: str) -> str:
     """
-    Second pass: rewrite into the exact required structure without adding facts.
-    Also fixes third-person voice and % formatting if needed.
+    Repair pass: rewrite output into the exact 13-section structure
+    without adding new facts. Removes guessed dates/claims.
     """
     prompt = f"""
 Your previous output did not meet the required format.
 
 Fix it:
-- Second-person voice only.
-- Exact SECTION A/B/C + exact <h3> headings.
-- Scores must be percentages (e.g., 72%).
-- Remove any guessed dates/grades/salaries or invented details.
-- Improve readability: short <p> blocks, labels, bullets.
+- Output exactly 13 sections in the correct order, each wrapped in <div class="section">.
+- Use the exact <h2> headings as specified.
+- Second-person voice only ("you").
+- Remove any guessed dates/grades or invented details.
+- Never estimate past pay.
+- Ensure scores are formatted as percentages like "72%".
+- Ensure every section ends with TL;DR.
+- Improve spacing: short paragraphs, labels, bullets.
 - Do NOT rehash the CV; focus on insights.
 
 CV TEXT:
@@ -280,7 +254,7 @@ Now output corrected HTML only.
             {"role": "user", "content": prompt},
         ],
         temperature=0.2,
-        max_tokens=3800,
+        max_tokens=4200,
     )
     return (response.choices[0].message.content or "").strip()
 
@@ -292,6 +266,8 @@ def generate_report_html(cv_text: str) -> str:
     model = os.environ.get("OPENAI_MODEL", "gpt-4.1-mini")
 
     try:
+        app.logger.info("Calling OpenAI for report generation...")
+
         response = client.chat.completions.create(
             model=model,
             messages=[
@@ -299,17 +275,16 @@ def generate_report_html(cv_text: str) -> str:
                 {"role": "user", "content": build_user_prompt(cv_text)},
             ],
             temperature=0.25,
-            max_tokens=3800,
+            max_tokens=4200,
         )
 
         html = (response.choices[0].message.content or "").strip()
 
+        # If the model drifts, repair automatically
         if not report_has_required_structure(html):
             app.logger.warning("Report structure invalid — running repair pass.")
-            html2 = repair_report_html(cv_text, html)
-            if report_has_required_structure(html2):
-                return html2
-            return html2 or html
+            fixed = repair_report_html(cv_text, html)
+            return fixed or html
 
         return html
 
@@ -324,7 +299,7 @@ def generate_report_html(cv_text: str) -> str:
 
 
 # ============================================================
-# Referral + email list + sheets + resend (kept as your existing)
+# Referral code
 # ============================================================
 def generate_referral_code(email: str) -> str:
     email = (email or "").strip()
@@ -339,6 +314,9 @@ def generate_referral_code(email: str) -> str:
     return prefix + digits
 
 
+# ============================================================
+# Save email locally
+# ============================================================
 def save_email_to_list(email: str) -> None:
     email = (email or "").strip().lower()
     if not email:
@@ -352,6 +330,9 @@ def save_email_to_list(email: str) -> None:
         writer.writerow([email, datetime.utcnow().isoformat()])
 
 
+# ============================================================
+# Sync email to Google Sheets (primary)
+# ============================================================
 def sync_email_to_sheet(email: str) -> None:
     email = (email or "").strip().lower()
     if not email:
@@ -386,20 +367,21 @@ def sync_email_to_sheet(email: str) -> None:
     sheet = client_gs.open(SHEET_NAME).sheet1
 
     existing = set()
-    records = sheet.get_all_records()
-    for row in records:
+    for row in sheet.get_all_records():
         existing_email = (row.get("email") or "").strip().lower()
         if existing_email:
             existing.add(existing_email)
 
     if email not in existing:
-        timestamp = datetime.utcnow().isoformat()
-        sheet.append_row([email, timestamp])
+        sheet.append_row([email, datetime.utcnow().isoformat()])
         app.logger.info(f"Added {email} to primary Google Sheet.")
     else:
         app.logger.info(f"Email {email} already in primary Google Sheet; skipping.")
 
 
+# ============================================================
+# Sync email to feedback sheet
+# ============================================================
 def sync_email_to_feedback_sheet(email: str) -> None:
     email = (email or "").strip().lower()
     if not email:
@@ -435,21 +417,27 @@ def sync_email_to_feedback_sheet(email: str) -> None:
     sheet = client_gs.open(SHEET_NAME).worksheet(WORKSHEET_NAME)
 
     existing = set()
-    records = sheet.get_all_records()
-    for row in records:
+    for row in sheet.get_all_records():
         existing_email = (row.get("email") or "").strip().lower()
         if existing_email:
             existing.add(existing_email)
 
     if email not in existing:
-        timestamp = datetime.utcnow().isoformat()
-        sheet.append_row([email, timestamp])
+        sheet.append_row([email, datetime.utcnow().isoformat()])
         app.logger.info(f"Added {email} to feedback Google Sheet.")
     else:
         app.logger.info(f"Email {email} already in feedback Google Sheet; skipping.")
 
 
-def send_report_email(recipient_email: str, html_report: str, referral_code: str, feedback_form_url: str) -> None:
+# ============================================================
+# Send report email via Resend
+# ============================================================
+def send_report_email(
+    recipient_email: str,
+    html_report: str,
+    referral_code: str,
+    feedback_form_url: str,
+) -> None:
     recipient_email = (recipient_email or "").strip()
     if not recipient_email:
         app.logger.info("No recipient email provided – skipping email send.")
@@ -460,13 +448,18 @@ def send_report_email(recipient_email: str, html_report: str, referral_code: str
         app.logger.error("RESEND_API_KEY not set; cannot send email.")
         return
 
-    from_email = os.environ.get("RESEND_FROM_EMAIL", "CareerCompass <report@career-compass.uk>")
+    from_email = os.environ.get(
+        "RESEND_FROM_EMAIL",
+        "CareerCompass <report@career-compass.uk>",
+    )
+
     subject = "Your CareerCompass report + Lifetime Membership draw"
     feedback_form_url = (feedback_form_url or "").strip()
     share_url = "https://career-compass.uk"
 
     html_parts = []
     html_parts.append("<div style='font-family: Arial, sans-serif; max-width: 720px; margin: 0 auto;'>")
+
     html_parts.append(
         """
         <p style="font-size:14px; line-height:1.6;">
@@ -495,7 +488,6 @@ def send_report_email(recipient_email: str, html_report: str, referral_code: str
           Share CareerCompass: <a href="{share_url}" style="color:#0957D0;">{share_url}</a>
         </p>
         <hr style="margin:18px 0; border:none; border-top:1px solid #dddddd;">
-        <h2 style="font-size:18px; margin-bottom:12px;">Your full CareerCompass report</h2>
         """
     )
 
@@ -510,16 +502,26 @@ def send_report_email(recipient_email: str, html_report: str, referral_code: str
         "text": "Your CareerCompass report is included in this email.",
     }
 
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
 
     try:
-        resp = requests.post("https://api.resend.com/emails", headers=headers, json=data, timeout=10)
+        resp = requests.post(
+            "https://api.resend.com/emails",
+            headers=headers,
+            json=data,
+            timeout=10,
+        )
         if 200 <= resp.status_code < 300:
             app.logger.info(f"Email sent to {recipient_email} via Resend.")
         else:
-            app.logger.error(f"Resend API error: status={resp.status_code}, body={resp.text}")
+            app.logger.error(
+                f"Resend API error for {recipient_email}: status={resp.status_code}, body={resp.text}"
+            )
     except requests.RequestException as e:
-        app.logger.error(f"Network error sending email via Resend: {e}")
+        app.logger.error(f"Network error sending email via Resend to {recipient_email}: {e}")
 
 
 # ============================================================
@@ -548,7 +550,7 @@ def generate_report():
     referral_code = generate_referral_code(email) if email else ""
     feedback_form_url = os.environ.get("FEEDBACK_FORM_URL", "")
 
-    # best effort storage + email
+    # best-effort email capture + sync
     try:
         save_email_to_list(email)
     except Exception as e:
@@ -564,6 +566,7 @@ def generate_report():
     except Exception as e:
         app.logger.error(f"Failed to sync email to feedback Google Sheet: {e}")
 
+    # send email best effort
     try:
         send_report_email(email, report_html, referral_code, feedback_form_url)
     except Exception as e:
